@@ -2905,6 +2905,9 @@
     "save_unavailable": "The pricing service is unavailable. No changes were saved. Reconnect and retry.",
     "structure_locked_by_usage_archive": "Historical usage details have been cleaned up, so models cannot be added or removed and pricing rule structures cannot be changed. Existing price amounts can still be edited.",
     "add_manual": "Add manually",
+    "capability": "Capability",
+    "billing_unit": "Billing Unit",
+    "unit_price": "Unit Price",
     "unmatched_title": "Unmatched models",
     "optional_price_placeholder": "Auto when blank",
     "empty": "No matching model prices"

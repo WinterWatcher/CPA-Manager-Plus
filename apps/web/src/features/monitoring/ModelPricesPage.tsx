@@ -30,6 +30,7 @@ import {
   createEmptyServiceTierDraft,
   createPriceDraft,
   filterModelPriceRows,
+  formatCapabilityUnitPrice,
   formatContextThreshold,
   formatPriceUnit,
   formatServiceTierRule,
@@ -64,7 +65,10 @@ type BasePriceDraftField =
   | 'completion'
   | 'cache'
   | 'cacheRead'
-  | 'cacheCreation';
+  | 'cacheCreation'
+  | 'capability'
+  | 'billingUnit'
+  | 'unitPrice';
 
 const resolveErrorMessage = (error: unknown, fallback: string) => {
   const rawMessage = error instanceof Error ? error.message : String(error || fallback);
@@ -481,6 +485,35 @@ export function ModelPricesPage() {
                 step="0.0001"
               />
             </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <Input
+                label={t('model_prices.capability', { defaultValue: 'Capability' })}
+                className={styles.compactInput}
+                value={draft.capability ?? ''}
+                onChange={(event) => setDraftField('capability', event.target.value)}
+                placeholder="e.g. asr, image"
+                data-testid="draft-capability-input"
+              />
+              <Input
+                label={t('model_prices.billing_unit', { defaultValue: 'Billing Unit' })}
+                className={styles.compactInput}
+                value={draft.billingUnit ?? ''}
+                onChange={(event) => setDraftField('billingUnit', event.target.value)}
+                placeholder="e.g. audio_seconds, tokens"
+                data-testid="draft-billing-unit-input"
+              />
+              <Input
+                label={`${t('model_prices.unit_price', { defaultValue: 'Unit Price' })} ($)`}
+                className={styles.compactInput}
+                type="number"
+                value={draft.unitPrice ?? ''}
+                onChange={(event) => setDraftField('unitPrice', event.target.value)}
+                placeholder="0.0000"
+                step="0.00001"
+                min="0"
+                data-testid="draft-unit-price-input"
+              />
+            </div>
             <div className={styles.compactEditorActions}>
               <Button
                 size="xs"
@@ -663,6 +696,14 @@ export function ModelPricesPage() {
                     : '';
                   const contextTiers = row.price?.contextTiers ?? [];
                   const serviceTiers = row.price?.serviceTiers ?? [];
+                  const effectiveCapability =
+                    row.price?.capability || selectedCandidate?.price?.capability;
+                  const effectiveBillingUnit =
+                    row.price?.billingUnit || selectedCandidate?.price?.billingUnit;
+                  const effectiveUnitPrice =
+                    row.price?.unitPrice ?? selectedCandidate?.price?.unitPrice;
+                  const hasCapabilityPricing =
+                    effectiveUnitPrice !== undefined || Boolean(effectiveBillingUnit);
 
                   return (
                     <tr key={row.model}>
@@ -676,6 +717,14 @@ export function ModelPricesPage() {
                                 data-testid={`pending-badge-${row.model}`}
                               >
                                 {t('model_prices.pending_sync_badge')}
+                              </span>
+                            ) : null}
+                            {effectiveCapability ? (
+                              <span
+                                className={styles.capabilityBadge}
+                                data-testid={`capability-badge-${row.model}`}
+                              >
+                                {effectiveCapability}
                               </span>
                             ) : null}
                           </strong>
@@ -693,8 +742,20 @@ export function ModelPricesPage() {
                       <td>{formatPriceUnit(row.price?.cacheRead)}</td>
                       <td>{formatPriceUnit(row.price?.cacheCreation)}</td>
                       <td className={styles.tierCell}>
-                        {contextTiers.length > 0 || serviceTiers.length > 0 ? (
+                        {contextTiers.length > 0 || serviceTiers.length > 0 || hasCapabilityPricing ? (
                           <div className={styles.tierList}>
+                            {hasCapabilityPricing ? (
+                              <span
+                                className={styles.tierBadge}
+                                data-testid={`capability-tier-badge-${row.model}`}
+                                title={`${effectiveCapability ? `${effectiveCapability} · ` : ''}${formatCapabilityUnitPrice(effectiveUnitPrice, effectiveBillingUnit)}`}
+                              >
+                                <strong>{effectiveBillingUnit || effectiveCapability || 'unit'}</strong>
+                                <small>
+                                  {formatCapabilityUnitPrice(effectiveUnitPrice, effectiveBillingUnit)}
+                                </small>
+                              </span>
+                            ) : null}
                             {contextTiers.map((tier) => {
                               const effectivePrice = resolveContextTierDisplayPrice(
                                 row.price,
@@ -802,9 +863,12 @@ export function ModelPricesPage() {
                                   <optgroup key={group.source} label={group.source}>
                                     {group.candidates.map((candidate) => {
                                       const identity = getModelPriceCandidateIdentity(candidate);
+                                      const capabilityInfo = candidate.price.capability
+                                        ? ` [${candidate.price.capability}]`
+                                        : '';
                                       return (
                                         <option key={identity} value={identity}>
-                                          {`${candidate.sourceModelId} · ${Math.round(candidate.score * 100)}%`}
+                                          {`${candidate.sourceModelId}${capabilityInfo} · ${Math.round(candidate.score * 100)}%`}
                                         </option>
                                       );
                                     })}

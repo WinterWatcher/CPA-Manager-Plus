@@ -7,6 +7,7 @@ import {
   buildSyncPriceModelsFromSummary,
   createPriceDraft,
   filterModelPriceRows,
+  formatCapabilityUnitPrice,
   formatContextThreshold,
   formatServiceTierRule,
   getModelPriceCandidateIdentity,
@@ -354,5 +355,112 @@ describe('modelPricesPageModel', () => {
         completion: 30,
       }
     );
+  });
+
+  it('formats capability unit prices with billing units', () => {
+    expect(formatCapabilityUnitPrice(0.00022, 'audio_seconds')).toBe('$0.00022/audio_seconds');
+    expect(formatCapabilityUnitPrice(0.04, 'images')).toBe('$0.0400/images');
+    expect(formatCapabilityUnitPrice(1, 'video_tasks')).toBe('$1.00/video_tasks');
+    expect(formatCapabilityUnitPrice(undefined, 'audio_seconds')).toBe('--/audio_seconds');
+    expect(formatCapabilityUnitPrice(undefined, undefined)).toBe('--');
+    expect(formatCapabilityUnitPrice(0.005)).toBe('$0.0050');
+  });
+
+  it('round-trips optional capability, billing unit, and unit price in manual editor draft', () => {
+    const draft = createPriceDraft('SenseVoiceSmall', {
+      prompt: 0,
+      completion: 0,
+      cache: 0,
+      capability: 'asr',
+      billingUnit: 'audio_seconds',
+      unitPrice: 0.00022,
+    });
+
+    expect(draft.capability).toBe('asr');
+    expect(draft.billingUnit).toBe('audio_seconds');
+    expect(draft.unitPrice).toBe('0.00022');
+
+    const built = buildPriceFromDraft(draft);
+    expect(built).toMatchObject({
+      source: 'manual',
+      capability: 'asr',
+      billingUnit: 'audio_seconds',
+      unitPrice: 0.00022,
+    });
+  });
+
+  it('preserves chat/token models without capability fields when saving drafts', () => {
+    const draft = createPriceDraft('gpt-4o', {
+      prompt: 2.5,
+      completion: 10,
+      cache: 1.25,
+      promptConfigured: true,
+      completionConfigured: true,
+    });
+
+    expect(draft.capability).toBe('');
+    expect(draft.billingUnit).toBe('');
+    expect(draft.unitPrice).toBe('');
+
+    const built = buildPriceFromDraft(draft);
+    expect(built?.capability).toBeUndefined();
+    expect(built?.billingUnit).toBeUndefined();
+    expect(built?.unitPrice).toBeUndefined();
+  });
+
+  it('filters rows by capability and billing unit keyword search', () => {
+    const rows = [
+      {
+        model: 'SenseVoiceSmall',
+        calls: 10,
+        requestedCalls: 10,
+        resolvedCalls: 10,
+        hasPrice: true,
+        candidateCount: 0,
+        price: {
+          prompt: 0,
+          completion: 0,
+          cache: 0,
+          capability: 'asr',
+          billingUnit: 'audio_seconds',
+          unitPrice: 0.00022,
+        },
+      },
+      {
+        model: 'dall-e-3',
+        calls: 5,
+        requestedCalls: 5,
+        resolvedCalls: 5,
+        hasPrice: true,
+        candidateCount: 0,
+        price: {
+          prompt: 0,
+          completion: 0,
+          cache: 0,
+          capability: 'image',
+          billingUnit: 'images',
+          unitPrice: 0.04,
+        },
+      },
+      {
+        model: 'gpt-4o',
+        calls: 20,
+        requestedCalls: 20,
+        resolvedCalls: 20,
+        hasPrice: true,
+        candidateCount: 0,
+        price: {
+          prompt: 2.5,
+          completion: 10,
+          cache: 1.25,
+        },
+      },
+    ];
+
+    expect(filterModelPriceRows(rows, 'all', 'asr')).toHaveLength(1);
+    expect(filterModelPriceRows(rows, 'all', 'asr')[0].model).toBe('SenseVoiceSmall');
+    expect(filterModelPriceRows(rows, 'all', 'audio_seconds')).toHaveLength(1);
+    expect(filterModelPriceRows(rows, 'all', 'images')).toHaveLength(1);
+    expect(filterModelPriceRows(rows, 'all', 'images')[0].model).toBe('dall-e-3');
   });
 });

@@ -47,6 +47,9 @@ export interface ModelPrice {
   completionConfigured?: boolean;
   cacheReadConfigured?: boolean;
   cacheCreationConfigured?: boolean;
+  capability?: string;
+  billingUnit?: string;
+  unitPrice?: number;
   source?: string;
   sourceModelId?: string;
   rawJson?: string;

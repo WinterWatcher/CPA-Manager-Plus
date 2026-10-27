@@ -585,4 +585,178 @@ describe('ModelPricesPage Attention UI', () => {
     });
     expect(mockAttentionState.check).toHaveBeenCalledWith({ force: true });
   });
+
+  it('renders capability badge and capability pricing details for capability-aware models', async () => {
+    vi.mocked(usageDataHook.useUsageData).mockReturnValue({
+      loading: false,
+      modelPrices: {
+        SenseVoiceSmall: {
+          prompt: 0,
+          completion: 0,
+          cache: 0,
+          capability: 'asr',
+          billingUnit: 'audio_seconds',
+          unitPrice: 0.00022,
+        },
+      },
+      setModelPrices: mockSetModelPrices,
+      syncModelPrices: mockSyncModelPrices,
+      usageServiceAvailable: true,
+    } as unknown as ReturnType<typeof usageDataHook.useUsageData>);
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <MemoryRouter initialEntries={['/model-prices']}>
+          <ModelPricesPage />
+        </MemoryRouter>
+      );
+    });
+
+    const root = renderer.root;
+    const badge = root.findByProps({ 'data-testid': 'capability-badge-SenseVoiceSmall' });
+    expect(badge).toBeDefined();
+    expect(badge.props.children).toBe('asr');
+
+    const tierBadge = root.findByProps({
+      'data-testid': 'capability-tier-badge-SenseVoiceSmall',
+    });
+    expect(tierBadge).toBeDefined();
+    expect(tierBadge.props.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ props: expect.objectContaining({ children: 'audio_seconds' }) }),
+        expect.objectContaining({
+          props: expect.objectContaining({ children: '$0.00022/audio_seconds' }),
+        }),
+      ])
+    );
+  });
+
+  it('renders candidate capability badge when candidate price has capability', async () => {
+    mockSyncModelPrices.mockResolvedValueOnce({
+      imported: 0,
+      skipped: 0,
+      prices: {},
+      candidates: [
+        {
+          model: 'runtime-new-model',
+          candidates: [
+            {
+              sourceModelId: 'whisper-large-v3',
+              score: 0.88,
+              price: {
+                prompt: 0,
+                completion: 0,
+                cache: 0,
+                capability: 'asr',
+                billingUnit: 'audio_seconds',
+                unitPrice: 0.006,
+                source: 'test-source',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <MemoryRouter initialEntries={['/model-prices']}>
+          <ModelPricesPage />
+        </MemoryRouter>
+      );
+    });
+
+    const root = renderer.root;
+    await act(async () => {
+      root.findByProps({ 'data-testid': 'sync-prices-button' }).props.onClick();
+    });
+
+    const badge = root.findByProps({ 'data-testid': 'capability-badge-runtime-new-model' });
+    expect(badge).toBeDefined();
+    expect(badge.props.children).toBe('asr');
+  });
+
+  it('preserves standard chat/token model display without capability badges', async () => {
+    vi.mocked(usageDataHook.useUsageData).mockReturnValue({
+      loading: false,
+      modelPrices: {
+        'gpt-4o': {
+          prompt: 2.5,
+          completion: 10,
+          cache: 1.25,
+        },
+      },
+      setModelPrices: mockSetModelPrices,
+      syncModelPrices: mockSyncModelPrices,
+      usageServiceAvailable: true,
+    } as unknown as ReturnType<typeof usageDataHook.useUsageData>);
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <MemoryRouter initialEntries={['/model-prices']}>
+          <ModelPricesPage />
+        </MemoryRouter>
+      );
+    });
+
+    const root = renderer.root;
+    expect(root.findAllByProps({ 'data-testid': 'capability-badge-gpt-4o' })).toHaveLength(0);
+    expect(root.findAllByProps({ 'data-testid': 'capability-tier-badge-gpt-4o' })).toHaveLength(0);
+  });
+
+  it('edits and saves capability, billing unit, and unit price in manual editor', async () => {
+    const setModelPrices = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(usageDataHook.useUsageData).mockReturnValue({
+      loading: false,
+      modelPrices: {},
+      setModelPrices,
+      syncModelPrices: mockSyncModelPrices,
+      usageServiceAvailable: true,
+    } as unknown as ReturnType<typeof usageDataHook.useUsageData>);
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <MemoryRouter initialEntries={['/model-prices']}>
+          <ModelPricesPage />
+        </MemoryRouter>
+      );
+    });
+
+    const root = renderer.root;
+    await act(async () => {
+      root.findByProps({ 'data-testid': 'add-price-button' }).props.onClick();
+    });
+
+    await act(async () => {
+      root
+        .findByProps({ 'data-testid': 'draft-model-input' })
+        .props.onChange({ target: { value: 'flux-schnell' } });
+      root
+        .findByProps({ 'data-testid': 'draft-capability-input' })
+        .props.onChange({ target: { value: 'image' } });
+      root
+        .findByProps({ 'data-testid': 'draft-billing-unit-input' })
+        .props.onChange({ target: { value: 'images' } });
+      root
+        .findByProps({ 'data-testid': 'draft-unit-price-input' })
+        .props.onChange({ target: { value: '0.04' } });
+    });
+
+    await act(async () => {
+      root.findByProps({ 'data-testid': 'save-draft-button' }).props.onClick();
+    });
+
+    expect(setModelPrices).toHaveBeenCalledWith({
+      'flux-schnell': expect.objectContaining({
+        capability: 'image',
+        billingUnit: 'images',
+        unitPrice: 0.04,
+        source: 'manual',
+      }),
+    });
+  });
 });

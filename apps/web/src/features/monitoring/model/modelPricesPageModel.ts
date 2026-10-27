@@ -31,6 +31,9 @@ export type PriceDraft = {
   cache: string;
   cacheRead: string;
   cacheCreation: string;
+  capability?: string;
+  billingUnit?: string;
+  unitPrice?: string;
   contextTiers: ContextTierDraft[];
   serviceTiers: ServiceTierDraft[];
 };
@@ -72,6 +75,9 @@ export const createEmptyPriceDraft = (): PriceDraft => ({
   cache: '',
   cacheRead: '',
   cacheCreation: '',
+  capability: '',
+  billingUnit: '',
+  unitPrice: '',
   contextTiers: [],
   serviceTiers: [],
 });
@@ -117,6 +123,9 @@ export const createPriceDraft = (model: string, price?: ModelPrice): PriceDraft 
   cacheCreation: price
     ? createConfiguredDraftValue(price.cacheCreation, price.cacheCreationConfigured)
     : '',
+  capability: price?.capability ?? '',
+  billingUnit: price?.billingUnit ?? '',
+  unitPrice: price?.unitPrice !== undefined ? String(price.unitPrice) : '',
   contextTiers: (price?.contextTiers ?? []).map((tier) => ({
     thresholdTokens: String(tier.thresholdTokens),
     ...createRulePriceDraft(tier),
@@ -196,7 +205,14 @@ export const buildPriceFromDraft = (draft: PriceDraft): ModelPrice | null => {
   const prompt = parsePriceValue(draft.prompt);
   const completion = parsePriceValue(draft.completion);
   const cache = draft.cache.trim() === '' ? prompt : parsePriceValue(draft.cache);
-  return {
+  const capability = draft.capability?.trim() || undefined;
+  const billingUnit = draft.billingUnit?.trim() || undefined;
+  const unitPrice =
+    draft.unitPrice !== undefined && draft.unitPrice.trim() !== ''
+      ? parsePriceValue(draft.unitPrice)
+      : undefined;
+
+  const result: ModelPrice = {
     prompt,
     completion,
     cache,
@@ -224,6 +240,12 @@ export const buildPriceFromDraft = (draft: PriceDraft): ModelPrice | null => {
           left.mode.localeCompare(right.mode) || left.serviceTier.localeCompare(right.serviceTier)
       ),
   };
+
+  if (capability) result.capability = capability;
+  if (billingUnit) result.billingUnit = billingUnit;
+  if (unitPrice !== undefined) result.unitPrice = unitPrice;
+
+  return result;
 };
 
 export const applyCandidatePrice = (
@@ -361,9 +383,26 @@ export const filterModelPriceRows = (
     return (
       row.model.toLowerCase().includes(query) ||
       row.price?.sourceModelId?.toLowerCase().includes(query) ||
-      row.price?.source?.toLowerCase().includes(query)
+      row.price?.source?.toLowerCase().includes(query) ||
+      row.price?.capability?.toLowerCase().includes(query) ||
+      row.price?.billingUnit?.toLowerCase().includes(query)
     );
   });
+};
+
+export const formatCapabilityUnitPrice = (
+  unitPrice: number | undefined,
+  billingUnit?: string
+) => {
+  const num = Number(unitPrice);
+  if (!Number.isFinite(num) || num < 0) {
+    return billingUnit ? `--/${billingUnit}` : '--';
+  }
+  const decimals = Number.isInteger(num)
+    ? 2
+    : Math.min(6, Math.max(4, (num.toString().split('.')[1] || '').length));
+  const formatted = num.toFixed(decimals);
+  return billingUnit ? `$${formatted}/${billingUnit}` : `$${formatted}`;
 };
 
 export const formatPriceUnit = (value: number | undefined) => {

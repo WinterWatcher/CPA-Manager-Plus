@@ -2900,6 +2900,9 @@
     "save_unavailable": "定價服務無法使用，變更尚未儲存。請恢復連線後重試。",
     "structure_locked_by_usage_archive": "歷史用量明細已清理，不能新增或刪除模型，也不能變更計價規則結構；現有價格數值仍可調整。",
     "add_manual": "手動新增",
+    "capability": "能力",
+    "billing_unit": "計費單位",
+    "unit_price": "單價",
     "unmatched_title": "未匹配模型",
     "optional_price_placeholder": "留空時自動計算",
     "empty": "沒有符合條件的模型價格"
