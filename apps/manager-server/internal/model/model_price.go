@@ -6,6 +6,9 @@ type ModelPrice struct {
 	Cache                   float64                 `json:"cache"`
 	CacheRead               float64                 `json:"cacheRead,omitempty"`
 	CacheCreation           float64                 `json:"cacheCreation,omitempty"`
+	Capability              string                  `json:"capability,omitempty"`
+	BillingUnit             string                  `json:"billingUnit,omitempty"`
+	UnitPrice               float64                 `json:"unitPrice,omitempty"`
 	PromptConfigured        bool                    `json:"promptConfigured,omitempty"`
 	CompletionConfigured    bool                    `json:"completionConfigured,omitempty"`
 	CacheReadConfigured     bool                    `json:"cacheReadConfigured,omitempty"`

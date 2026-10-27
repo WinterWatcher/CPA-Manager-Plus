@@ -17,25 +17,25 @@ import (
 )
 
 type Event struct {
-	RequestID      string `json:"request_id,omitempty"`
-	EventHash      string `json:"event_hash"`
-	TimestampMS    int64  `json:"timestamp_ms"`
-	Timestamp      string `json:"timestamp"`
-	Provider       string `json:"provider,omitempty"`
-	ExecutorType   string `json:"executor_type,omitempty"`
-	Model          string `json:"model"`
-	AnalyticsModel string `json:"analytics_model,omitempty"`
-	RequestedModel string `json:"requested_model,omitempty"`
-	ResolvedModel  string `json:"resolved_model,omitempty"`
-	ResponseModel  string `json:"response_model,omitempty"`
-	SessionID      string `json:"session_id,omitempty"`
-	ParentSessionID string `json:"parent_session_id,omitempty"`
+	RequestID         string `json:"request_id,omitempty"`
+	EventHash         string `json:"event_hash"`
+	TimestampMS       int64  `json:"timestamp_ms"`
+	Timestamp         string `json:"timestamp"`
+	Provider          string `json:"provider,omitempty"`
+	ExecutorType      string `json:"executor_type,omitempty"`
+	Model             string `json:"model"`
+	AnalyticsModel    string `json:"analytics_model,omitempty"`
+	RequestedModel    string `json:"requested_model,omitempty"`
+	ResolvedModel     string `json:"resolved_model,omitempty"`
+	ResponseModel     string `json:"response_model,omitempty"`
+	SessionID         string `json:"session_id,omitempty"`
+	ParentSessionID   string `json:"parent_session_id,omitempty"`
 	AccessTokenSHA256 string `json:"access_token_sha256,omitempty"`
-	Generate       *bool  `json:"generate,omitempty"`
-	Stream         *bool  `json:"stream,omitempty"`
-	Endpoint       string `json:"endpoint,omitempty"`
-	Method         string `json:"method,omitempty"`
-	Path           string `json:"path,omitempty"`
+	Generate          *bool  `json:"generate,omitempty"`
+	Stream            *bool  `json:"stream,omitempty"`
+	Endpoint          string `json:"endpoint,omitempty"`
+	Method            string `json:"method,omitempty"`
+	Path              string `json:"path,omitempty"`
 	// Downstream request metadata is available only to authenticated monitoring
 	// APIs. Compatible usage payloads and JSONL exports intentionally omit it.
 	ClientIP              string `json:"-"`
@@ -55,18 +55,23 @@ type Event struct {
 	AuthSnapshotAtMS      int64  `json:"auth_snapshot_at_ms,omitempty"`
 	// ReasoningEffort is the request-side effort setting added by CPA v7.1.18+.
 	// It is not the same as response-side tokens.reasoning_tokens usage.
-	ReasoningEffort     string `json:"reasoning_effort,omitempty"`
-	ServiceTier         string `json:"service_tier,omitempty"`
-	RequestServiceTier  string `json:"request_service_tier,omitempty"`
-	ResponseServiceTier string `json:"response_service_tier,omitempty"`
-	CacheInputMode      string `json:"cache_input_mode,omitempty"`
-	InputTokens         int64  `json:"input_tokens"`
-	OutputTokens        int64  `json:"output_tokens"`
-	ReasoningTokens     int64  `json:"reasoning_tokens"`
-	CachedTokens        int64  `json:"cached_tokens"`
-	CacheTokens         int64  `json:"cache_tokens"`
-	CacheReadTokens     int64  `json:"cache_read_tokens"`
-	CacheCreationTokens int64  `json:"cache_creation_tokens"`
+	ReasoningEffort     string  `json:"reasoning_effort,omitempty"`
+	ServiceTier         string  `json:"service_tier,omitempty"`
+	RequestServiceTier  string  `json:"request_service_tier,omitempty"`
+	ResponseServiceTier string  `json:"response_service_tier,omitempty"`
+	CacheInputMode      string  `json:"cache_input_mode,omitempty"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	Capability          string  `json:"capability,omitempty"`
+	BillingUnit         string  `json:"billing_unit,omitempty"`
+	Quantity            float64 `json:"quantity,omitempty"`
+	InputQuantity       float64 `json:"input_quantity,omitempty"`
+	OutputQuantity      float64 `json:"output_quantity,omitempty"`
+	ReasoningTokens     int64   `json:"reasoning_tokens"`
+	CachedTokens        int64   `json:"cached_tokens"`
+	CacheTokens         int64   `json:"cache_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
 	// Normalized token buckets are persisted for aggregation and billing but are
 	// not exposed in compatible usage payloads.
 	NormalizedUncachedInputTokens int64 `json:"-"`
@@ -191,11 +196,11 @@ type Payload struct {
 }
 
 const (
-	maxFailSummaryBytes            = 4096
-	maxClientIPBytes               = 64
-	maxXForwardedForBytes          = 2048
-	maxUserAgentBytes              = 1024
-	LongContextInputTokenThreshold = int64(272_000)
+	maxFailSummaryBytes                        = 4096
+	maxClientIPBytes                           = 64
+	maxXForwardedForBytes                      = 2048
+	maxUserAgentBytes                          = 1024
+	LongContextInputTokenThreshold             = int64(272_000)
 	CacheInputModeIncluded                     = "included_in_input"
 	CacheInputModeSeparate                     = "separate_from_input"
 	CacheInputModeReadIncludedCreationSeparate = "read_included_creation_separate"
@@ -256,9 +261,9 @@ type RawCacheAccountingHints struct {
 }
 
 const (
-	canonicalTokenAccountingSchemaVersion int64 = 2
-	maxCanonicalJSONInteger               int64 = (1 << 53) - 1
-	canonicalTokenAccountingQualityComplete      = "complete"
+	canonicalTokenAccountingSchemaVersion   int64 = 2
+	maxCanonicalJSONInteger                 int64 = (1 << 53) - 1
+	canonicalTokenAccountingQualityComplete       = "complete"
 )
 
 type canonicalTokenInputBreakdown struct {

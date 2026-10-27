@@ -298,6 +298,30 @@ func ValidateModelPrice(modelID string, price ModelPrice) error {
 	if err != nil {
 		return fmt.Errorf("invalid model price for %s: %w", modelID, err)
 	}
+	if err = ValidateCapabilityPricing(price); err != nil {
+		return fmt.Errorf("invalid model price for %s: %w", modelID, err)
+	}
+	return nil
+}
+
+func ValidateCapabilityPricing(price ModelPrice) error {
+	unit := strings.ToLower(strings.TrimSpace(price.BillingUnit))
+	capability := strings.ToLower(strings.TrimSpace(price.Capability))
+	if unit == "" && capability == "" {
+		return nil
+	}
+	if unit == "" {
+		return errors.New("billing unit is required when capability is set")
+	}
+	allowedUnits := map[string]bool{
+		"tokens": true, "audio_seconds": true, "characters": true, "images": true, "video_tasks": true,
+	}
+	if !allowedUnits[unit] {
+		return fmt.Errorf("unsupported billing unit: %s", unit)
+	}
+	if !validModelPriceRuleValue(price.UnitPrice) {
+		return errors.New("unit price must be finite and non-negative")
+	}
 	return nil
 }
 
