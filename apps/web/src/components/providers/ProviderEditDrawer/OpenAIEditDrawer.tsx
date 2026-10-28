@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { HeaderInputList } from '@/components/ui/HeaderInputList';
 import { ModelInputList } from '@/components/ui/ModelInputList';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
@@ -20,6 +21,7 @@ import {
   toCommittedModelThinkingSnapshot,
   type ApiKeyEntry,
   type OpenAIProviderConfig,
+  type ProviderCapability,
 } from '@/types';
 import { buildHeaderObject, headersToEntries, normalizeHeaderEntries } from '@/utils/headers';
 import { normalizeAuthIndex } from '@/utils/authIndex';
@@ -80,6 +82,13 @@ const buildEmptyForm = (): OpenAIFormState => ({
   modelEntries: [{ name: '', alias: '' }],
   testModel: undefined,
   disableCooling: 'inherit',
+  capability: 'chat',
+  supportedEndpoints: ['/v1/chat/completions'],
+  billingUnit: 'tokens',
+  unitPrice: undefined,
+  isAsync: false,
+  canTrackUsage: true,
+  description: '',
 });
 
 const normalizeModelEntries = (entries: OpenAIFormState['modelEntries']) =>
@@ -135,6 +144,14 @@ const buildOpenAIBaseline = (form: OpenAIFormState) => ({
   headers: normalizeHeaderEntries(form.headers),
   apiKeyEntries: normalizeApiKeyEntries(form.apiKeyEntries),
   models: normalizeModelEntries(form.modelEntries).map(toCommittedModelThinkingSnapshot),
+  capability: form.capability || 'chat',
+  supportedEndpoints: (form.supportedEndpoints ?? []).map((e) => e.trim()).filter(Boolean).sort(),
+  billingUnit: form.billingUnit || 'tokens',
+  unitPrice:
+    typeof form.unitPrice === 'number' && Number.isFinite(form.unitPrice) ? form.unitPrice : null,
+  isAsync: Boolean(form.isAsync),
+  canTrackUsage: form.canTrackUsage !== false,
+  description: String(form.description ?? '').trim(),
 });
 
 const areNormalizedApiKeyEntriesEqual = (
@@ -272,6 +289,13 @@ export function OpenAIEditDrawer({
           ? initialData.apiKeyEntries
           : [buildApiKeyEntry()],
         disableCooling: coolingPolicyFromOverride(initialData.disableCooling),
+        capability: initialData.capability || 'chat',
+        supportedEndpoints: initialData.supportedEndpoints,
+        billingUnit: initialData.billingUnit ?? 'tokens',
+        unitPrice: initialData.unitPrice,
+        isAsync: initialData.isAsync ?? (initialData.capability === 'video'),
+        canTrackUsage: initialData.canTrackUsage ?? true,
+        description: initialData.description ?? '',
       };
       setForm(seededForm);
       setBaseline(buildOpenAIBaseline(seededForm));
@@ -319,12 +343,31 @@ export function OpenAIEditDrawer({
       form.priority !== undefined && Number.isFinite(form.priority)
         ? Math.trunc(form.priority)
         : null;
+    const normalizedEndpoints = (form.supportedEndpoints ?? [])
+      .map((e) => e.trim())
+      .filter(Boolean)
+      .sort();
+    const baseEndpoints = baseline.supportedEndpoints ?? [];
+    const isEndpointsDirty =
+      baseEndpoints.length !== normalizedEndpoints.length ||
+      baseEndpoints.some((ep, i) => ep !== normalizedEndpoints[i]);
+
     return (
       baseline.name !== form.name.trim() ||
       baseline.priority !== normalizedPriority ||
       baseline.prefix !== form.prefix.trim() ||
       baseline.baseUrl !== form.baseUrl.trim() ||
       baseline.disableCooling !== form.disableCooling ||
+      (baseline.capability || 'chat') !== (form.capability || 'chat') ||
+      (baseline.billingUnit || 'tokens') !== (form.billingUnit || 'tokens') ||
+      (baseline.unitPrice ?? null) !==
+        (typeof form.unitPrice === 'number' && Number.isFinite(form.unitPrice)
+          ? form.unitPrice
+          : null) ||
+      Boolean(baseline.isAsync) !== Boolean(form.isAsync) ||
+      (baseline.canTrackUsage !== false) !== (form.canTrackUsage !== false) ||
+      (baseline.description ?? '') !== (form.description?.trim() ?? '') ||
+      isEndpointsDirty ||
       !areKeyValueEntriesEqual(baseline.headers, normalizeHeaderEntries(form.headers)) ||
       !areNormalizedApiKeyEntriesEqual(
         baseline.apiKeyEntries,
@@ -699,6 +742,16 @@ export function OpenAIEditDrawer({
           authIndex: normalizeAuthIndex(entry.authIndex) ?? undefined,
           headers: entry.headers,
         })),
+        capability: form.capability || 'chat',
+        supportedEndpoints: form.supportedEndpoints?.map((e) => e.trim()).filter(Boolean),
+        billingUnit: form.billingUnit?.trim() || 'tokens',
+        unitPrice:
+          typeof form.unitPrice === 'number' && Number.isFinite(form.unitPrice)
+            ? form.unitPrice
+            : undefined,
+        isAsync: Boolean(form.isAsync),
+        canTrackUsage: form.canTrackUsage !== false,
+        description: form.description?.trim() || undefined,
       };
       if (form.priority !== undefined && Number.isFinite(form.priority))
         payload.priority = Math.trunc(form.priority);
@@ -999,6 +1052,159 @@ export function OpenAIEditDrawer({
               disabled={saving || disabled || isTestingKeys}
               id="openai-drawer-cooling-policy"
             />
+
+            <Input
+              label={t('ai_providers.description_label')}
+              placeholder={t('ai_providers.description_placeholder')}
+              value={form.description ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+              disabled={saving || disabled || isTestingKeys}
+            />
+
+            <div className="form-group">
+              <label>{t('ai_providers.capability_label')}</label>
+              <Select
+                value={form.capability || 'chat'}
+                onChange={(value) => {
+                  const capability = value as ProviderCapability;
+                  setForm((prev) => {
+                    const isPreviousDefaultEndpoints =
+                      !prev.supportedEndpoints ||
+                      prev.supportedEndpoints.length === 0 ||
+                      (prev.supportedEndpoints.length === 1 &&
+                        [
+                          '/v1/chat/completions',
+                          '/v1/embeddings',
+                          '/v1/rerank',
+                          '/v1/audio/transcriptions',
+                          '/v1/audio/speech',
+                          '/v1/images/generations',
+                        ].includes(prev.supportedEndpoints[0]));
+                    const newEndpoints =
+                      isPreviousDefaultEndpoints
+                        ? capability === 'embedding'
+                          ? ['/v1/embeddings']
+                          : capability === 'rerank'
+                            ? ['/v1/rerank']
+                            : capability === 'asr'
+                              ? ['/v1/audio/transcriptions']
+                              : capability === 'tts'
+                                ? ['/v1/audio/speech']
+                                : capability === 'image'
+                                  ? ['/v1/images/generations']
+                                  : capability === 'video'
+                                    ? ['/v1/videos/generations', '/v1/videos/tasks/{id}']
+                                    : ['/v1/chat/completions']
+                        : prev.supportedEndpoints;
+
+                    const defaultUnit =
+                      capability === 'asr'
+                        ? 'audio_seconds'
+                        : capability === 'tts'
+                          ? 'characters'
+                          : capability === 'image'
+                            ? 'images'
+                            : capability === 'video'
+                              ? 'video_tasks'
+                              : 'tokens';
+
+                    return {
+                      ...prev,
+                      capability,
+                      supportedEndpoints: newEndpoints,
+                      billingUnit:
+                        prev.billingUnit && prev.billingUnit !== 'tokens'
+                          ? prev.billingUnit
+                          : defaultUnit,
+                      isAsync: prev.isAsync !== undefined ? prev.isAsync : capability === 'video',
+                    };
+                  });
+                }}
+                options={[
+                  { value: 'chat', label: t('ai_providers.capability_chat') },
+                  { value: 'embedding', label: t('ai_providers.capability_embedding') },
+                  { value: 'rerank', label: t('ai_providers.capability_rerank') },
+                  { value: 'asr', label: t('ai_providers.capability_asr') },
+                  { value: 'tts', label: t('ai_providers.capability_tts') },
+                  { value: 'image', label: t('ai_providers.capability_image') },
+                  { value: 'video', label: t('ai_providers.capability_video') },
+                ]}
+                disabled={saving || disabled || isTestingKeys}
+                ariaLabel={t('ai_providers.capability_label')}
+              />
+            </div>
+
+            <Input
+              label={t('ai_providers.supported_endpoints_label')}
+              hint={t('ai_providers.supported_endpoints_hint')}
+              placeholder="/v1/chat/completions, /v1/embeddings"
+              value={(form.supportedEndpoints ?? []).join(', ')}
+              onChange={(e) => {
+                const endpoints = e.target.value
+                  .split(/[\n,]+/)
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                setForm((prev) => ({ ...prev, supportedEndpoints: endpoints }));
+              }}
+              disabled={saving || disabled || isTestingKeys}
+            />
+
+            <div className="form-group">
+              <label>{t('ai_providers.billing_unit_label')}</label>
+              <Select
+                value={form.billingUnit || 'tokens'}
+                onChange={(value) => setForm((prev) => ({ ...prev, billingUnit: value }))}
+                options={[
+                  { value: 'tokens', label: t('ai_providers.billing_unit_tokens') },
+                  {
+                    value: 'audio_seconds',
+                    label: t('ai_providers.billing_unit_audio_seconds'),
+                  },
+                  { value: 'characters', label: t('ai_providers.billing_unit_characters') },
+                  { value: 'images', label: t('ai_providers.billing_unit_images') },
+                  { value: 'video_tasks', label: t('ai_providers.billing_unit_video_tasks') },
+                ]}
+                disabled={saving || disabled || isTestingKeys}
+                ariaLabel={t('ai_providers.billing_unit_label')}
+              />
+            </div>
+
+            <Input
+              label={t('ai_providers.unit_price_label')}
+              hint={t('ai_providers.unit_price_hint')}
+              type="number"
+              step="any"
+              value={form.unitPrice ?? ''}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const parsed = raw.trim() === '' ? undefined : Number(raw);
+                setForm((prev) => ({
+                  ...prev,
+                  unitPrice: parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined,
+                }));
+              }}
+              disabled={saving || disabled || isTestingKeys}
+            />
+
+            <div className="form-group">
+              <label>{t('ai_providers.is_async_label')}</label>
+              <ToggleSwitch
+                checked={Boolean(form.isAsync)}
+                onChange={(value) => setForm((prev) => ({ ...prev, isAsync: value }))}
+                disabled={saving || disabled || isTestingKeys}
+                ariaLabel={t('ai_providers.is_async_label')}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>{t('ai_providers.can_track_usage_label')}</label>
+              <ToggleSwitch
+                checked={form.canTrackUsage !== false}
+                onChange={(value) => setForm((prev) => ({ ...prev, canTrackUsage: value }))}
+                disabled={saving || disabled || isTestingKeys}
+                ariaLabel={t('ai_providers.can_track_usage_label')}
+              />
+            </div>
 
             <div className={styles.keyEntriesSection}>
               <div className={styles.keyEntriesHeader}>

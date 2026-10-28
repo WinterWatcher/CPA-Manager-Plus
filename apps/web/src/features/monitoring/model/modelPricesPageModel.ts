@@ -38,13 +38,27 @@ export type PriceDraft = {
   serviceTiers: ServiceTierDraft[];
 };
 
+export const SUPPORTED_BILLING_UNITS = [
+  'tokens',
+  'audio_seconds',
+  'characters',
+  'images',
+  'video_tasks',
+] as const;
+
+export type SupportedBillingUnit = (typeof SUPPORTED_BILLING_UNITS)[number];
+
+export const isSupportedBillingUnit = (unit: string): unit is SupportedBillingUnit =>
+  SUPPORTED_BILLING_UNITS.includes(unit.trim().toLowerCase() as SupportedBillingUnit);
+
 export type PriceDraftValidationError =
   | 'context_threshold'
   | 'context_duplicate_threshold'
   | 'context_price'
   | 'service_identity'
   | 'service_duplicate_identity'
-  | 'service_price';
+  | 'service_price'
+  | 'invalid_billing_unit';
 
 export type ModelPriceRow = {
   model: string;
@@ -183,6 +197,13 @@ export const validatePriceDraft = (draft: PriceDraft): PriceDraftValidationError
     serviceIdentifiers.add(serviceTier);
     if (!hasConfiguredRulePrice(tier) || hasInvalidRulePrice(tier)) return 'service_price';
   }
+
+  if (draft.billingUnit && draft.billingUnit.trim() !== '') {
+    if (!isSupportedBillingUnit(draft.billingUnit)) {
+      return 'invalid_billing_unit';
+    }
+  }
+
   return null;
 };
 

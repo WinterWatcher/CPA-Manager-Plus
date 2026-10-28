@@ -143,6 +143,51 @@ describe('OpenAIEditDrawer model discovery', () => {
     act(() => renderer!.unmount());
   });
 
+  it('loads and saves non-token capability provider settings', async () => {
+    mocks.getOpenAIProviders.mockResolvedValue([
+      {
+        name: 'video-gen-provider',
+        baseUrl: 'https://video.example.com/v1',
+        apiKeyEntries: [{ apiKey: 'sk-video-key' }],
+        models: [{ name: 'sora-2' }],
+        capability: 'video',
+        supportedEndpoints: ['/v1/videos/generations', '/v1/videos/tasks/{id}'],
+        billingUnit: 'video_tasks',
+        unitPrice: 0.25,
+        isAsync: true,
+        canTrackUsage: true,
+        description: 'High performance video cluster',
+      },
+    ]);
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <OpenAIEditDrawer open editIndex={0} disabled={false} onClose={vi.fn()} onSaved={vi.fn()} />
+      );
+    });
+
+    await act(async () => {
+      await findSaveButton(renderer!.root)?.props.onClick();
+    });
+
+    expect(mocks.updateOpenAIProvider).toHaveBeenCalledWith(
+      'video-gen-provider',
+      0,
+      expect.objectContaining({
+        name: 'video-gen-provider',
+        capability: 'video',
+        supportedEndpoints: ['/v1/videos/generations', '/v1/videos/tasks/{id}'],
+        billingUnit: 'video_tasks',
+        unitPrice: 0.25,
+        isAsync: true,
+        canTrackUsage: true,
+        description: 'High performance video cluster',
+      })
+    );
+    act(() => renderer!.unmount());
+  });
+
   it('tests and discovers models for an indexed keyless proxy without Authorization', async () => {
     mocks.getOpenAIProviders.mockResolvedValueOnce([{
       name: 'keyless-proxy',

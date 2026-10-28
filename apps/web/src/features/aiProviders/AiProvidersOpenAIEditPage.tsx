@@ -9,7 +9,9 @@ import { ModelInputList } from '@/components/ui/ModelInputList';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 import { hasInvalidThinkingLevels } from '@/components/ui/modelInputListUtils';
 import { Select } from '@/components/ui/Select';
+import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { CoolingPolicySelect } from '@/components/providers/CoolingPolicySelect';
+import type { ProviderCapability } from '@/types';
 import { SecondaryScreenShell } from '@/components/common/SecondaryScreenShell';
 import { OpenAIKeyTestStatusIndicator, type OpenAIFormApiKeyEntry } from '@/components/providers';
 import { useEdgeSwipeBack } from '@/hooks/useEdgeSwipeBack';
@@ -595,6 +597,159 @@ export function AiProvidersOpenAIEditPage() {
               disabled={saving || disableControls || isTestingKeys}
               id="openai-page-cooling-policy"
             />
+
+            <Input
+              label={t('ai_providers.description_label')}
+              placeholder={t('ai_providers.description_placeholder')}
+              value={form.description ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+              disabled={saving || disableControls || isTestingKeys}
+            />
+
+            <div className="form-group">
+              <label>{t('ai_providers.capability_label')}</label>
+              <Select
+                value={form.capability || 'chat'}
+                onChange={(value) => {
+                  const capability = value as ProviderCapability;
+                  setForm((prev) => {
+                    const isPreviousDefaultEndpoints =
+                      !prev.supportedEndpoints ||
+                      prev.supportedEndpoints.length === 0 ||
+                      (prev.supportedEndpoints.length === 1 &&
+                        [
+                          '/v1/chat/completions',
+                          '/v1/embeddings',
+                          '/v1/rerank',
+                          '/v1/audio/transcriptions',
+                          '/v1/audio/speech',
+                          '/v1/images/generations',
+                        ].includes(prev.supportedEndpoints[0]));
+                    const newEndpoints =
+                      isPreviousDefaultEndpoints
+                        ? capability === 'embedding'
+                          ? ['/v1/embeddings']
+                          : capability === 'rerank'
+                            ? ['/v1/rerank']
+                            : capability === 'asr'
+                              ? ['/v1/audio/transcriptions']
+                              : capability === 'tts'
+                                ? ['/v1/audio/speech']
+                                : capability === 'image'
+                                  ? ['/v1/images/generations']
+                                  : capability === 'video'
+                                    ? ['/v1/videos/generations', '/v1/videos/tasks/{id}']
+                                    : ['/v1/chat/completions']
+                        : prev.supportedEndpoints;
+
+                    const defaultUnit =
+                      capability === 'asr'
+                        ? 'audio_seconds'
+                        : capability === 'tts'
+                          ? 'characters'
+                          : capability === 'image'
+                            ? 'images'
+                            : capability === 'video'
+                              ? 'video_tasks'
+                              : 'tokens';
+
+                    return {
+                      ...prev,
+                      capability,
+                      supportedEndpoints: newEndpoints,
+                      billingUnit:
+                        prev.billingUnit && prev.billingUnit !== 'tokens'
+                          ? prev.billingUnit
+                          : defaultUnit,
+                      isAsync: prev.isAsync !== undefined ? prev.isAsync : capability === 'video',
+                    };
+                  });
+                }}
+                options={[
+                  { value: 'chat', label: t('ai_providers.capability_chat') },
+                  { value: 'embedding', label: t('ai_providers.capability_embedding') },
+                  { value: 'rerank', label: t('ai_providers.capability_rerank') },
+                  { value: 'asr', label: t('ai_providers.capability_asr') },
+                  { value: 'tts', label: t('ai_providers.capability_tts') },
+                  { value: 'image', label: t('ai_providers.capability_image') },
+                  { value: 'video', label: t('ai_providers.capability_video') },
+                ]}
+                disabled={saving || disableControls || isTestingKeys}
+                ariaLabel={t('ai_providers.capability_label')}
+              />
+            </div>
+
+            <Input
+              label={t('ai_providers.supported_endpoints_label')}
+              hint={t('ai_providers.supported_endpoints_hint')}
+              placeholder="/v1/chat/completions, /v1/embeddings"
+              value={(form.supportedEndpoints ?? []).join(', ')}
+              onChange={(e) => {
+                const endpoints = e.target.value
+                  .split(/[\n,]+/)
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                setForm((prev) => ({ ...prev, supportedEndpoints: endpoints }));
+              }}
+              disabled={saving || disableControls || isTestingKeys}
+            />
+
+            <div className="form-group">
+              <label>{t('ai_providers.billing_unit_label')}</label>
+              <Select
+                value={form.billingUnit || 'tokens'}
+                onChange={(value) => setForm((prev) => ({ ...prev, billingUnit: value }))}
+                options={[
+                  { value: 'tokens', label: t('ai_providers.billing_unit_tokens') },
+                  {
+                    value: 'audio_seconds',
+                    label: t('ai_providers.billing_unit_audio_seconds'),
+                  },
+                  { value: 'characters', label: t('ai_providers.billing_unit_characters') },
+                  { value: 'images', label: t('ai_providers.billing_unit_images') },
+                  { value: 'video_tasks', label: t('ai_providers.billing_unit_video_tasks') },
+                ]}
+                disabled={saving || disableControls || isTestingKeys}
+                ariaLabel={t('ai_providers.billing_unit_label')}
+              />
+            </div>
+
+            <Input
+              label={t('ai_providers.unit_price_label')}
+              hint={t('ai_providers.unit_price_hint')}
+              type="number"
+              step="any"
+              value={form.unitPrice ?? ''}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const parsed = raw.trim() === '' ? undefined : Number(raw);
+                setForm((prev) => ({
+                  ...prev,
+                  unitPrice: parsed !== undefined && Number.isFinite(parsed) ? parsed : undefined,
+                }));
+              }}
+              disabled={saving || disableControls || isTestingKeys}
+            />
+
+            <div className="form-group">
+              <label>{t('ai_providers.is_async_label')}</label>
+              <ToggleSwitch
+                checked={Boolean(form.isAsync)}
+                onChange={(value) => setForm((prev) => ({ ...prev, isAsync: value }))}
+                disabled={saving || disableControls || isTestingKeys}
+                ariaLabel={t('ai_providers.is_async_label')}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>{t('ai_providers.can_track_usage_label')}</label>
+              <ToggleSwitch
+                checked={form.canTrackUsage !== false}
+                onChange={(value) => setForm((prev) => ({ ...prev, canTrackUsage: value }))}
+                disabled={saving || disableControls || isTestingKeys}
+                ariaLabel={t('ai_providers.can_track_usage_label')}
+              />
+            </div>
 
             {/* 模型配置区域 - 统一布局 */}
             <div className={styles.modelConfigSection}>

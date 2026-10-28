@@ -4,7 +4,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { CoolingPolicySelect } from '../CoolingPolicySelect';
 import { IconCheck, IconX } from '@/components/ui/icons';
-import { maskApiKey } from '@/utils/format';
+import { maskApiKey, sanitizeProviderUrl } from '@/utils/format';
 import { getOpenAIKeyCount } from '@/utils/openAIKeyEntries';
 import { ProviderStatusBar } from '../ProviderStatusBar';
 import {
@@ -204,7 +204,9 @@ export function ProviderDetailDrawer({
                 <span className={styles.keyEntryWeight}>
                   {t('ai_providers.weight_label')}: {formatCredentialWeight(entry.weight)}
                 </span>
-                {entry.proxyUrl && <span className={styles.keyEntryProxy}>{entry.proxyUrl}</span>}
+                {entry.proxyUrl && (
+                  <span className={styles.keyEntryProxy}>{sanitizeProviderUrl(entry.proxyUrl)}</span>
+                )}
                 <span className={styles.keyEntryStats}>
                   {entry.apiKey?.trim() ? (
                     <>
@@ -242,10 +244,43 @@ export function ProviderDetailDrawer({
           {!row.enabled && (
             <div className={styles.disabledBadge}>{t('ai_providers.config_disabled_badge')}</div>
           )}
+          {row.description && (
+            <FieldRow label={t('ai_providers.description_label')} value={row.description} />
+          )}
+          {row.capability && (
+            <FieldRow
+              label={t('ai_providers.capability_label')}
+              value={t(`ai_providers.capability_${row.capability}`, {
+                defaultValue: row.capability,
+              })}
+            />
+          )}
+          {row.billingUnit && (
+            <FieldRow
+              label={t('ai_providers.billing_unit_label')}
+              value={t(`ai_providers.billing_unit_${row.billingUnit}`, {
+                defaultValue: row.billingUnit,
+              })}
+            />
+          )}
+          {row.unitPrice !== undefined && (
+            <FieldRow
+              label={t('ai_providers.unit_price_label')}
+              value={`${row.unitPrice} / ${t(`ai_providers.billing_unit_${row.billingUnit ?? 'tokens'}`, { defaultValue: row.billingUnit ?? 'tokens' })}`}
+            />
+          )}
+          <FieldRow
+            label={t('ai_providers.is_async_label')}
+            value={row.isAsync ? t('common.yes') : t('common.no')}
+          />
+          <FieldRow
+            label={t('ai_providers.can_track_usage_label')}
+            value={row.canTrackUsage !== false ? t('common.yes') : t('common.no')}
+          />
           {row.kind !== 'openai' && (
             <FieldRow label={t('common.api_key')} value={maskApiKey(row.raw.apiKey)} />
           )}
-          <FieldRow label={t('common.base_url')} value={row.baseUrl} />
+          <FieldRow label={t('common.base_url')} value={sanitizeProviderUrl(row.baseUrl)} />
           <FieldRow label={t('common.priority')} value={row.priority} />
           {row.kind !== 'openai' && (
             <FieldRow
@@ -255,12 +290,28 @@ export function ProviderDetailDrawer({
           )}
           <FieldRow label={t('common.prefix')} value={row.raw.prefix} />
           {row.kind !== 'openai' && (
-            <FieldRow label={t('common.proxy_url')} value={row.raw.proxyUrl} />
+            <FieldRow
+              label={t('common.proxy_url')}
+              value={sanitizeProviderUrl(row.raw.proxyUrl || '')}
+            />
           )}
           {row.kind === 'openai' && (
             <FieldRow label={t('ai_providers.openai_test_model')} value={row.raw.testModel} />
           )}
         </section>
+
+        {row.supportedEndpoints && row.supportedEndpoints.length > 0 && (
+          <section className={styles.section}>
+            <h4 className={styles.sectionTitle}>{t('ai_providers.supported_endpoints_label')}</h4>
+            <div className={styles.badgeList}>
+              {row.supportedEndpoints.map((endpoint) => (
+                <span key={endpoint} className={styles.headerBadge}>
+                  {endpoint}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
 
         {renderQuickSwitches()}
         {renderCloak()}

@@ -418,4 +418,42 @@ describe('ProviderTable', () => {
     expect(getText(renderedRows[1])).toContain('status_bar.no_requests');
     expect(renderedRows[1].findAllByType(ProviderStatusBar)).toHaveLength(0);
   });
+
+  it('renders capability and async badges and sanitizes internal URLs', () => {
+    const openaiConfigs = [
+      {
+        name: 'video-upstream',
+        baseUrl: 'http://192.168.1.50:9000/v1',
+        apiKeyEntries: [],
+        capability: 'video' as const,
+        isAsync: true,
+      },
+      {
+        name: 'chat-standard',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKeyEntries: [],
+        capability: 'chat' as const,
+        isAsync: false,
+      },
+    ];
+    const rows = filterAndSortProviderRows(
+      buildProviderRows({ ...emptyInput, openai: openaiConfigs })
+    );
+    const renderer = renderTable(rows);
+    const renderedRows = getRows(renderer);
+
+    // video-upstream row
+    const videoRowText = getText(renderedRows[0]);
+    expect(videoRowText).toContain('ai_providers.capability_video');
+    expect(videoRowText).toContain('ai_providers.is_async_badge');
+    expect(videoRowText).toContain('[internal route]');
+    expect(videoRowText).not.toContain('192.168.1.50');
+    expect(videoRowText).not.toContain(':9000');
+
+    // chat-standard row: no capability badge for default chat, no async badge, safe url displayed
+    const chatRowText = getText(renderedRows[1]);
+    expect(chatRowText).not.toContain('ai_providers.capability_chat');
+    expect(chatRowText).not.toContain('ai_providers.is_async_badge');
+    expect(chatRowText).toContain('https://api.openai.com/v1');
+  });
 });

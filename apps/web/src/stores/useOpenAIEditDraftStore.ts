@@ -38,6 +38,13 @@ export type OpenAIEditBaseline = {
   }>;
   models: ModelEntry[];
   testModel: string;
+  capability?: string;
+  supportedEndpoints?: string[];
+  billingUnit?: string;
+  unitPrice?: number | null;
+  isAsync?: boolean;
+  canTrackUsage?: boolean;
+  description?: string;
 };
 
 export type OpenAIEditDraft = {
@@ -80,6 +87,13 @@ const buildEmptyForm = (): OpenAIFormState => ({
   modelEntries: [{ name: '', alias: '' }],
   testModel: undefined,
   disableCooling: 'inherit',
+  capability: 'chat',
+  supportedEndpoints: ['/v1/chat/completions'],
+  billingUnit: 'tokens',
+  unitPrice: undefined,
+  isAsync: false,
+  canTrackUsage: true,
+  description: '',
 });
 
 const buildEmptyDraft = (): OpenAIEditDraft => ({

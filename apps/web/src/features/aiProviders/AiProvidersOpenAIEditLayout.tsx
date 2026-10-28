@@ -84,6 +84,13 @@ const buildEmptyForm = (): OpenAIFormState => ({
   modelEntries: [{ name: '', alias: '' }],
   testModel: undefined,
   disableCooling: 'inherit',
+  capability: 'chat',
+  supportedEndpoints: ['/v1/chat/completions'],
+  billingUnit: 'tokens',
+  unitPrice: undefined,
+  isAsync: false,
+  canTrackUsage: true,
+  description: '',
 });
 
 const getErrorMessage = (err: unknown) => {
@@ -149,6 +156,14 @@ const buildOpenAIBaseline = (form: OpenAIFormState, testModel: string): OpenAIEd
   apiKeyEntries: normalizeApiKeyEntries(form.apiKeyEntries),
   models: normalizeModelEntries(form.modelEntries).map(toCommittedModelThinkingSnapshot),
   testModel: String(testModel ?? '').trim(),
+  capability: form.capability || 'chat',
+  supportedEndpoints: (form.supportedEndpoints ?? []).map((e) => e.trim()).filter(Boolean).sort(),
+  billingUnit: form.billingUnit || 'tokens',
+  unitPrice:
+    typeof form.unitPrice === 'number' && Number.isFinite(form.unitPrice) ? form.unitPrice : null,
+  isAsync: Boolean(form.isAsync),
+  canTrackUsage: form.canTrackUsage !== false,
+  description: String(form.description ?? '').trim(),
 });
 
 const areNormalizedApiKeyEntriesEqual = (
@@ -358,6 +373,13 @@ export function AiProvidersOpenAIEditLayout() {
           ? initialData.apiKeyEntries
           : [buildApiKeyEntry()],
         disableCooling: coolingPolicyFromOverride(initialData.disableCooling),
+        capability: initialData.capability || 'chat',
+        supportedEndpoints: initialData.supportedEndpoints,
+        billingUnit: initialData.billingUnit ?? 'tokens',
+        unitPrice: initialData.unitPrice,
+        isAsync: initialData.isAsync ?? (initialData.capability === 'video'),
+        canTrackUsage: initialData.canTrackUsage ?? true,
+        description: initialData.description ?? '',
       };
 
       const available = modelEntries.map((entry) => entry.name.trim()).filter(Boolean);
@@ -479,6 +501,16 @@ export function AiProvidersOpenAIEditLayout() {
     if (!baseline) return false;
     return !areNormalizedApiKeyEntriesEqual(baseline.apiKeyEntries, normalizedApiKeyEntries);
   }, [baseline, normalizedApiKeyEntries]);
+  const normalizedEndpoints = useMemo(
+    () => (form.supportedEndpoints ?? []).map((e) => e.trim()).filter(Boolean).sort(),
+    [form.supportedEndpoints]
+  );
+  const isEndpointsDirty = useMemo(() => {
+    if (!baseline) return false;
+    const baseEndpoints = baseline.supportedEndpoints ?? [];
+    if (baseEndpoints.length !== normalizedEndpoints.length) return true;
+    return baseEndpoints.some((ep, i) => ep !== normalizedEndpoints[i]);
+  }, [baseline, normalizedEndpoints]);
   const isDirty =
     Boolean(draft?.initialized) &&
     baseline !== null &&
@@ -488,6 +520,16 @@ export function AiProvidersOpenAIEditLayout() {
       baseline.baseUrl !== form.baseUrl.trim() ||
       baseline.disableCooling !== form.disableCooling ||
       baseline.testModel !== normalizedTestModel ||
+      (baseline.capability || 'chat') !== (form.capability || 'chat') ||
+      (baseline.billingUnit || 'tokens') !== (form.billingUnit || 'tokens') ||
+      (baseline.unitPrice ?? null) !==
+        (typeof form.unitPrice === 'number' && Number.isFinite(form.unitPrice)
+          ? form.unitPrice
+          : null) ||
+      Boolean(baseline.isAsync) !== Boolean(form.isAsync) ||
+      (baseline.canTrackUsage !== false) !== (form.canTrackUsage !== false) ||
+      (baseline.description ?? '') !== (form.description?.trim() ?? '') ||
+      isEndpointsDirty ||
       isHeadersDirty ||
       isApiKeyEntriesDirty ||
       isModelsDirty);
@@ -543,6 +585,16 @@ export function AiProvidersOpenAIEditLayout() {
           authIndex: normalizeAuthIndex(entry.authIndex) ?? undefined,
           headers: entry.headers,
         })),
+        capability: form.capability || 'chat',
+        supportedEndpoints: form.supportedEndpoints?.map((e) => e.trim()).filter(Boolean),
+        billingUnit: form.billingUnit?.trim() || 'tokens',
+        unitPrice:
+          typeof form.unitPrice === 'number' && Number.isFinite(form.unitPrice)
+            ? form.unitPrice
+            : undefined,
+        isAsync: Boolean(form.isAsync),
+        canTrackUsage: form.canTrackUsage !== false,
+        description: form.description?.trim() || undefined,
       };
       if (form.priority !== undefined && Number.isFinite(form.priority)) {
         payload.priority = Math.trunc(form.priority);

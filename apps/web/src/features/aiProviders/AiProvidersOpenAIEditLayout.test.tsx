@@ -148,4 +148,40 @@ describe('AiProvidersOpenAIEditLayout dirty tracking', () => {
 
     act(() => renderer.unmount());
   });
+
+  it('tracks dirty state when non-token capability fields are changed and restored', async () => {
+    const renderer = await renderEditor();
+    const context = mocks.outletContext.current as unknown as EditorContext;
+    expect(isBlockedLeavingEditor()).toBe(false);
+
+    // change capability to asr
+    await act(async () => {
+      context.setForm((prev) => ({ ...prev, capability: 'asr' }));
+    });
+    await flush();
+    expect(isBlockedLeavingEditor()).toBe(true);
+
+    // restore capability to chat
+    await act(async () => {
+      context.setForm((prev) => ({ ...prev, capability: 'chat' }));
+    });
+    await flush();
+    expect(isBlockedLeavingEditor()).toBe(false);
+
+    // change description
+    await act(async () => {
+      context.setForm((prev) => ({ ...prev, description: 'Internal GPU cluster' }));
+    });
+    await flush();
+    expect(isBlockedLeavingEditor()).toBe(true);
+
+    // restore description
+    await act(async () => {
+      context.setForm((prev) => ({ ...prev, description: '' }));
+    });
+    await flush();
+    expect(isBlockedLeavingEditor()).toBe(false);
+
+    act(() => renderer.unmount());
+  });
 });

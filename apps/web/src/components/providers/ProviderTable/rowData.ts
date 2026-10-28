@@ -65,6 +65,13 @@ interface ProviderRowBase {
   statusData: StatusBarData;
   /** 关键字搜索匹配串（小写） */
   haystack: string;
+  capability?: string;
+  supportedEndpoints?: string[];
+  billingUnit?: string;
+  unitPrice?: number;
+  isAsync?: boolean;
+  canTrackUsage?: boolean;
+  description?: string;
 }
 
 export type ProviderRow =
@@ -138,6 +145,13 @@ function buildKeyConfigRow(
       config.proxyUrl,
       config.authIndex,
     ]),
+    capability: 'chat',
+    supportedEndpoints: ['/v1/chat/completions'],
+    billingUnit: 'tokens',
+    unitPrice: undefined,
+    isAsync: false,
+    canTrackUsage: true,
+    description: undefined,
     raw: config,
   } as ProviderRow;
 }
@@ -149,6 +163,22 @@ function buildOpenAIRow(
 ): ProviderRow {
   const modelNames = collectModelNames(provider.models);
   const apiKeyEntries = provider.apiKeyEntries ?? [];
+  const capability = provider.capability || 'chat';
+  const defaultEndpoints =
+    capability === 'embedding' ? ['/v1/embeddings']
+    : capability === 'rerank' ? ['/v1/rerank']
+    : capability === 'asr' ? ['/v1/audio/transcriptions']
+    : capability === 'tts' ? ['/v1/audio/speech']
+    : capability === 'image' ? ['/v1/images/generations']
+    : capability === 'video' ? ['/v1/videos/generations', '/v1/videos/tasks/{id}']
+    : ['/v1/chat/completions'];
+  const defaultBillingUnit =
+    capability === 'asr' ? 'audio_seconds'
+    : capability === 'tts' ? 'characters'
+    : capability === 'image' ? 'images'
+    : capability === 'video' ? 'video_tasks'
+    : 'tokens';
+
   return {
     key: `openai:${getOpenAIProviderKey(provider, originalIndex)}`,
     kind: 'openai',
@@ -165,11 +195,20 @@ function buildOpenAIRow(
     usageStatsCoverage: getOpenAIUsageStatsCoverage(apiKeyEntries),
     recentSuccess: getOpenAIProviderRecentWindowStats(provider, usageByProvider).success,
     statusData: getOpenAIProviderRecentStatusData(provider, usageByProvider),
+    capability,
+    supportedEndpoints: provider.supportedEndpoints ?? defaultEndpoints,
+    billingUnit: provider.billingUnit ?? defaultBillingUnit,
+    unitPrice: typeof provider.unitPrice === 'number' ? provider.unitPrice : undefined,
+    isAsync: provider.isAsync ?? (capability === 'video'),
+    canTrackUsage: provider.canTrackUsage ?? true,
+    description: provider.description as string | undefined,
     haystack: buildHaystack([
       provider.name,
       provider.prefix,
       provider.baseUrl,
       provider.authIndex,
+      capability,
+      provider.description,
       ...apiKeyEntries.flatMap((entry) => [entry.apiKey, entry.proxyUrl]),
     ]),
     raw: provider,

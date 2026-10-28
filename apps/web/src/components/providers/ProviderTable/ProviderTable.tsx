@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/icons';
 import { ProviderStatusBar } from '../ProviderStatusBar';
 import { getProviderKindIcon, PROVIDER_KIND_LABELS } from './kindMeta';
+import { sanitizeProviderUrl } from '@/utils/format';
 import type { ProviderRow } from './rowData';
 import styles from './ProviderTable.module.scss';
 
@@ -243,6 +244,28 @@ export function ProviderTable({
                 <span className={styles.identityLabel} title={row.label}>
                   {row.label}
                 </span>
+                {row.capability && row.capability !== 'chat' && (
+                  <span
+                    className={styles.capabilityBadge}
+                    data-testid="provider-capability-badge"
+                    title={t(`ai_providers.capability_${row.capability}`, {
+                      defaultValue: row.capability,
+                    })}
+                  >
+                    {t(`ai_providers.capability_${row.capability}`, {
+                      defaultValue: row.capability,
+                    })}
+                  </span>
+                )}
+                {row.isAsync && (
+                  <span
+                    className={styles.asyncBadge}
+                    data-testid="provider-async-badge"
+                    title={t('ai_providers.is_async_badge')}
+                  >
+                    {t('ai_providers.is_async_badge')}
+                  </span>
+                )}
                 {row.kind === 'openai' && (
                   <span className={styles.identityMeta}>
                     {t('ai_providers.openai_keys_count')}: {row.keyCount}
@@ -251,8 +274,12 @@ export function ProviderTable({
               </div>
             </div>
 
-            <div className={styles.cellUrl} role="cell" title={row.baseUrl || undefined}>
-              {row.baseUrl || '—'}
+            <div
+              className={styles.cellUrl}
+              role="cell"
+              title={sanitizeProviderUrl(row.baseUrl) || undefined}
+            >
+              {sanitizeProviderUrl(row.baseUrl) || '—'}
             </div>
 
             <div className={`${styles.cellModels} ${styles.cellNumeric}`} role="cell">

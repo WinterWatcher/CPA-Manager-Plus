@@ -144,3 +144,52 @@ export function truncateText(text: string, maxLength: number): string {
   }
   return text.slice(0, maxLength) + '...';
 }
+
+/**
+ * 脱敏 Provider 上游 URL，屏蔽私网 IP、内网域名和非标准内部端口
+ */
+export function sanitizeProviderUrl(rawUrl: string): string {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsed = new URL(trimmed);
+    const hostname = parsed.hostname.toLowerCase();
+    const isLoopback =
+      hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0';
+    const isPrivateIP =
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+      /^169\.254\./.test(hostname) ||
+      /^fc00:/.test(hostname) ||
+      /^fe80:/.test(hostname);
+    const isInternalDomain =
+      hostname.endsWith('.internal') ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.lan') ||
+      hostname.endsWith('.corp') ||
+      hostname.endsWith('.cluster.local') ||
+      hostname.includes('.svc.');
+
+    if (isLoopback || isPrivateIP || isInternalDomain) {
+      return '[internal route]';
+    }
+
+    // 不暴露非标准内部端口
+    if (parsed.port && parsed.port !== '80' && parsed.port !== '443') {
+      return `${parsed.protocol}//${parsed.hostname}${parsed.pathname === '/' ? '' : parsed.pathname}`;
+    }
+
+    return `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`;
+  } catch {
+    if (
+      /localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d+|192\.168\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+|\.internal|\.local|\.lan/i.test(
+        trimmed
+      )
+    ) {
+      return '[internal route]';
+    }
+    return trimmed;
+  }
+}

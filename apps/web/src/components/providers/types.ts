@@ -4,6 +4,7 @@ import {
   type ApiKeyEntry,
   type CoolingPolicy,
   type GeminiKeyConfig,
+  type ProviderCapability,
   type ProviderKeyConfig,
 } from '@/types';
 import type { CredentialWeightInputValue } from '@/utils/credentialWeight';
@@ -33,6 +34,13 @@ export interface OpenAIFormState {
   modelEntries: ModelEntry[];
   apiKeyEntries: OpenAIFormApiKeyEntry[];
   disableCooling: CoolingPolicy;
+  capability?: ProviderCapability;
+  supportedEndpoints?: string[];
+  billingUnit?: string;
+  unitPrice?: number;
+  isAsync?: boolean;
+  canTrackUsage?: boolean;
+  description?: string;
 }
 
 export type OpenAIFormApiKeyEntry = Omit<ApiKeyEntry, 'weight'> & {

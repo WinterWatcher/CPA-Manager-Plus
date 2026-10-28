@@ -218,4 +218,34 @@ describe('ProviderDetailDrawer', () => {
 
     act(() => renderer.unmount());
   });
+
+  it('renders capability, billing unit, endpoints, and sanitizes internal URLs', () => {
+    const row = buildOpenAIRow({
+      name: 'Local Whisper ASR',
+      baseUrl: 'http://127.0.0.1:8000/v1',
+      apiKeyEntries: [{ apiKey: 'secret-key-12345', proxyUrl: 'http://10.0.0.5:8080' }],
+      capability: 'asr',
+      supportedEndpoints: ['/v1/audio/transcriptions', '/v1/audio/translations'],
+      billingUnit: 'audio_seconds',
+      unitPrice: 0.006,
+      isAsync: false,
+      canTrackUsage: true,
+      description: 'Dedicated internal ASR cluster',
+    });
+    const text = renderDetailText(row);
+
+    // Capability details
+    expect(text).toContain('ai_providers.capability_asr');
+    expect(text).toContain('ai_providers.billing_unit_audio_seconds');
+    expect(text).toContain('0.006 / ai_providers.billing_unit_audio_seconds');
+    expect(text).toContain('Dedicated internal ASR cluster');
+    expect(text).toContain('/v1/audio/transcriptions');
+    expect(text).toContain('/v1/audio/translations');
+
+    // Sanitization & masking
+    expect(text).toContain('[internal route]');
+    expect(text).not.toContain('127.0.0.1:8000');
+    expect(text).not.toContain('10.0.0.5:8080');
+    expect(text).not.toContain('secret-key-12345');
+  });
 });

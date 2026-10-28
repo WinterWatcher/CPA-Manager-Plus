@@ -389,6 +389,41 @@ describe('modelPricesPageModel', () => {
     });
   });
 
+  it('preserves explicit zero free unit price without treating it as empty or undefined', () => {
+    const draft = createPriceDraft('Free-TTS', {
+      prompt: 0,
+      completion: 0,
+      cache: 0,
+      capability: 'tts',
+      billingUnit: 'characters',
+      unitPrice: 0,
+    });
+
+    expect(draft.unitPrice).toBe('0');
+    const built = buildPriceFromDraft(draft);
+    expect(built?.unitPrice).toBe(0);
+    expect(formatCapabilityUnitPrice(0, 'characters')).toBe('$0.00/characters');
+  });
+
+  it('validates billing units and rejects unknown non-standard units', () => {
+    const validDraft = createPriceDraft('dall-e-3', {
+      prompt: 0,
+      completion: 0,
+      cache: 0,
+      capability: 'image',
+      billingUnit: 'images',
+      unitPrice: 0.04,
+    });
+    expect(validatePriceDraft(validDraft)).toBeNull();
+
+    const invalidDraft = {
+      ...validDraft,
+      billingUnit: 'invalid_unrecognized_unit',
+    };
+    expect(validatePriceDraft(invalidDraft)).toBe('invalid_billing_unit');
+    expect(buildPriceFromDraft(invalidDraft)).toBeNull();
+  });
+
   it('preserves chat/token models without capability fields when saving drafts', () => {
     const draft = createPriceDraft('gpt-4o', {
       prompt: 2.5,

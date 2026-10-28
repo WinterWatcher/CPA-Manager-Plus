@@ -184,6 +184,25 @@ export interface ProviderKeyConfig {
   rebuildMidSystemMessage?: boolean;
 }
 
+export type ProviderCapability =
+  | 'chat'
+  | 'embedding'
+  | 'rerank'
+  | 'asr'
+  | 'tts'
+  | 'image'
+  | 'video';
+
+export const SUPPORTED_PROVIDER_CAPABILITIES: readonly ProviderCapability[] = [
+  'chat',
+  'embedding',
+  'rerank',
+  'asr',
+  'tts',
+  'image',
+  'video',
+] as const;
+
 export interface OpenAIProviderConfig {
   name: string;
   prefix?: string;
@@ -196,5 +215,12 @@ export interface OpenAIProviderConfig {
   testModel?: string;
   authIndex?: string;
   disableCooling?: boolean | null;
+  capability?: ProviderCapability;
+  supportedEndpoints?: string[];
+  billingUnit?: string;
+  unitPrice?: number;
+  isAsync?: boolean;
+  canTrackUsage?: boolean;
+  description?: string;
   [key: string]: unknown;
 }
