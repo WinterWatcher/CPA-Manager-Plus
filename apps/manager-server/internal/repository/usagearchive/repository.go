@@ -2132,6 +2132,11 @@ const archiveRecordExpression = `json_patch(
 		'header_trace_id', coalesce(e.header_trace_id, ''),
 		'fail_body', coalesce(e.fail_body, ''),
 		'raw_json', coalesce(e.raw_json, ''),
+		'capability', coalesce(e.capability, ''),
+		'billing_unit', coalesce(e.billing_unit, ''),
+		'quantity', coalesce(e.quantity, 0),
+		'input_quantity', coalesce(e.input_quantity, 0),
+		'output_quantity', coalesce(e.output_quantity, 0),
 		'created_at_ms', e.created_at_ms
 	)
 )`

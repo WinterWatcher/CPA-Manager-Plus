@@ -198,7 +198,12 @@ func loadEventPageItemsByCandidates(ctx context.Context, tx *sql.Tx, candidates 
 		coalesce(parent_session_id, ''),
 		coalesce(access_token_sha256, ''),
 		generate,
-		stream
+		stream,
+		coalesce(capability, ''),
+		coalesce(billing_unit, ''),
+		coalesce(quantity, 0),
+		coalesce(input_quantity, 0),
+		coalesce(output_quantity, 0)
 	from usage_events
 	where id in (select value from json_each(?))
 	order by timestamp_ms desc, id desc`, string(encoded))
@@ -265,6 +270,11 @@ func loadEventPageItemsByCandidates(ctx context.Context, tx *sql.Tx, candidates 
 			&accessTokenSHA256,
 			&generateVal,
 			&streamVal,
+			&item.Capability,
+			&item.BillingUnit,
+			&item.Quantity,
+			&item.InputQuantity,
+			&item.OutputQuantity,
 		); err != nil {
 			return nil, err
 		}

@@ -90,6 +90,11 @@ type ModelStat struct {
 	CacheReadTokens     int64
 	CacheCreationTokens int64
 	TotalTokens         int64
+	Capability          string
+	BillingUnit         string
+	Quantity            float64
+	InputQuantity       float64
+	OutputQuantity      float64
 }
 
 // RecentFailure holds the columns required to display a recent failure entry.
@@ -200,10 +205,15 @@ select
 	coalesce(sum(case when coalesce(e.normalized_total_input_tokens, e.input_tokens) > %[1]d then max(max(e.cached_tokens, e.cache_tokens) - max(e.cache_read_tokens, 0) - max(e.cache_creation_tokens, 0), 0) else 0 end), 0),
 	coalesce(sum(case when coalesce(e.normalized_total_input_tokens, e.input_tokens) > %[1]d then e.cache_read_tokens else 0 end), 0),
 	coalesce(sum(case when coalesce(e.normalized_total_input_tokens, e.input_tokens) > %[1]d then e.cache_creation_tokens else 0 end), 0),
-	coalesce(sum(e.total_tokens), 0)
+	coalesce(sum(e.total_tokens), 0),
+	coalesce(e.capability, '') as capability,
+	coalesce(e.billing_unit, '') as billing_unit,
+	coalesce(sum(case when e.failed = 0 then e.quantity else 0 end), 0) as quantity,
+	coalesce(sum(case when e.failed = 0 then e.input_quantity else 0 end), 0) as input_quantity,
+	coalesce(sum(case when e.failed = 0 then e.output_quantity else 0 end), 0) as output_quantity
 from banded_usage_events e
 join top_models t on t.model = e.analytics_model_value
-group by e.analytics_model_value, billing_model, e.pricing_model_value, e.context_threshold_tokens_value, coalesce(e.service_tier, '')
+group by e.analytics_model_value, billing_model, e.pricing_model_value, e.context_threshold_tokens_value, coalesce(e.service_tier, ''), coalesce(e.capability, ''), coalesce(e.billing_unit, '')
 order by max(t.model_calls) desc, e.analytics_model_value, calls desc`, usage.LongContextInputTokenThreshold)
 
 // TopModelsBetween returns the most active models ordered by call count.
@@ -240,6 +250,11 @@ func (r *repository) TopModelsBetween(ctx context.Context, fromMs, toMs int64, l
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
 			&stat.TotalTokens,
+			&stat.Capability,
+			&stat.BillingUnit,
+			&stat.Quantity,
+			&stat.InputQuantity,
+			&stat.OutputQuantity,
 		); err != nil {
 			return nil, err
 		}
@@ -268,10 +283,15 @@ select
 	coalesce(sum(case when coalesce(normalized_total_input_tokens, input_tokens) > %[1]d then max(max(cached_tokens, cache_tokens) - max(cache_read_tokens, 0) - max(cache_creation_tokens, 0), 0) else 0 end), 0),
 	coalesce(sum(case when coalesce(normalized_total_input_tokens, input_tokens) > %[1]d then cache_read_tokens else 0 end), 0),
 	coalesce(sum(case when coalesce(normalized_total_input_tokens, input_tokens) > %[1]d then cache_creation_tokens else 0 end), 0),
-	coalesce(sum(total_tokens), 0)
+	coalesce(sum(total_tokens), 0),
+	coalesce(capability, '') as capability,
+	coalesce(billing_unit, '') as billing_unit,
+	coalesce(sum(case when failed = 0 then quantity else 0 end), 0) as quantity,
+	coalesce(sum(case when failed = 0 then input_quantity else 0 end), 0) as input_quantity,
+	coalesce(sum(case when failed = 0 then output_quantity else 0 end), 0) as output_quantity
 from banded_usage_events
 where timestamp_ms >= ? and timestamp_ms < ?
-group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
+group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, ''), coalesce(capability, ''), coalesce(billing_unit, '')
 order by calls desc`, usage.LongContextInputTokenThreshold)
 
 // ModelStatsBetween returns per-model totals for all models in a window.
@@ -305,6 +325,11 @@ func (r *repository) ModelStatsBetween(ctx context.Context, fromMs, toMs int64) 
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
 			&stat.TotalTokens,
+			&stat.Capability,
+			&stat.BillingUnit,
+			&stat.Quantity,
+			&stat.InputQuantity,
+			&stat.OutputQuantity,
 		); err != nil {
 			return nil, err
 		}

@@ -1939,6 +1939,11 @@ func eventFromExportedRecord(record map[string]any) (Event, bool, error) {
 		CacheInputMode:                accounting.Mode,
 		InputTokens:                   inputTokens,
 		OutputTokens:                  outputTokens,
+		Capability:                    strings.ToLower(readString(record, "capability", "Capability")),
+		BillingUnit:                   strings.ToLower(readString(record, "billing_unit", "billingUnit", "unit")),
+		Quantity:                      readFloatValue(record, "quantity", "Quantity"),
+		InputQuantity:                 readFloatValue(record, "input_quantity", "inputQuantity"),
+		OutputQuantity:                readFloatValue(record, "output_quantity", "outputQuantity"),
 		ReasoningTokens:               reasoningTokens,
 		CachedTokens:                  cachedTokens,
 		CacheTokens:                   cacheTokens,
@@ -2369,6 +2374,11 @@ func eventFromLegacyDetail(
 		CacheInputMode:                accounting.Mode,
 		InputTokens:                   inputTokens,
 		OutputTokens:                  outputTokens,
+		Capability:                    strings.ToLower(readString(detail, "capability", "Capability")),
+		BillingUnit:                   strings.ToLower(readString(detail, "billing_unit", "billingUnit", "unit")),
+		Quantity:                      readFloatValue(detail, "quantity", "Quantity"),
+		InputQuantity:                 readFloatValue(detail, "input_quantity", "inputQuantity"),
+		OutputQuantity:                readFloatValue(detail, "output_quantity", "outputQuantity"),
 		ReasoningTokens:               reasoningTokens,
 		CachedTokens:                  cachedTokens,
 		CacheTokens:                   cacheTokens,
@@ -2525,4 +2535,11 @@ func decodeJSON(data []byte, target any) error {
 		return fmt.Errorf("usage import payload contains multiple JSON values")
 	}
 	return nil
+}
+
+func readFloatValue(record map[string]any, keys ...string) float64 {
+	if val := readOptionalFloat(record, keys...); val != nil {
+		return *val
+	}
+	return 0
 }

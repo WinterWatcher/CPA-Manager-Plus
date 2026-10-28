@@ -68,7 +68,7 @@ func (r *repository) LoadAllTx(ctx context.Context, tx *sql.Tx) (map[string]mode
 	rows, err := tx.QueryContext(ctx, `select
 		model, prompt_per_1m, completion_per_1m, cache_per_1m, cache_read_per_1m, cache_creation_per_1m,
 		prompt_configured, completion_configured, cache_read_configured, cache_creation_configured, source, source_model_id, raw_json,
-		updated_at_ms, synced_at_ms
+		updated_at_ms, synced_at_ms, capability, billing_unit, unit_price
 		from model_prices order by model`)
 	if err != nil {
 		return nil, err
@@ -78,8 +78,9 @@ func (r *repository) LoadAllTx(ctx context.Context, tx *sql.Tx) (map[string]mode
 	for rows.Next() {
 		var modelID string
 		var price model.ModelPrice
-		var source, sourceModelID, rawJSON sql.NullString
+		var source, sourceModelID, rawJSON, capability, billingUnit sql.NullString
 		var syncedAt sql.NullInt64
+		var unitPrice sql.NullFloat64
 		var promptConfigured, completionConfigured, cacheReadConfigured, cacheCreationConfigured configuredFlag
 		if err := rows.Scan(
 			&modelID,
@@ -97,6 +98,9 @@ func (r *repository) LoadAllTx(ctx context.Context, tx *sql.Tx) (map[string]mode
 			&rawJSON,
 			&price.UpdatedAtMS,
 			&syncedAt,
+			&capability,
+			&billingUnit,
+			&unitPrice,
 		); err != nil {
 			return nil, err
 		}
@@ -107,6 +111,9 @@ func (r *repository) LoadAllTx(ctx context.Context, tx *sql.Tx) (map[string]mode
 		price.CacheCreationConfigured = bool(cacheCreationConfigured)
 		price.SourceModelID = sourceModelID.String
 		price.RawJSON = rawJSON.String
+		price.Capability = capability.String
+		price.BillingUnit = billingUnit.String
+		price.UnitPrice = unitPrice.Float64
 		if syncedAt.Valid {
 			value := syncedAt.Int64
 			price.SyncedAtMS = &value
@@ -275,8 +282,8 @@ func (r *repository) ReplaceAll(ctx context.Context, prices map[string]model.Mod
 	stmt, err := tx.PrepareContext(ctx, `insert into model_prices (
 		model, prompt_per_1m, completion_per_1m, cache_per_1m, cache_read_per_1m, cache_creation_per_1m,
 		prompt_configured, completion_configured, cache_read_configured, cache_creation_configured, source, source_model_id,
-		raw_json, updated_at_ms, synced_at_ms
-	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		raw_json, updated_at_ms, synced_at_ms, capability, billing_unit, unit_price
+	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -311,6 +318,9 @@ func (r *repository) ReplaceAll(ctx context.Context, prices map[string]model.Mod
 			nullString(price.RawJSON),
 			now,
 			nullInt(price.SyncedAtMS),
+			nullString(price.Capability),
+			nullString(price.BillingUnit),
+			price.UnitPrice,
 		); err != nil {
 			return err
 		}
@@ -344,8 +354,8 @@ func (r *repository) UpsertSynced(ctx context.Context, prices map[string]model.M
 	stmt, err := tx.PrepareContext(ctx, `insert into model_prices (
 		model, prompt_per_1m, completion_per_1m, cache_per_1m, cache_read_per_1m, cache_creation_per_1m,
 		prompt_configured, completion_configured, cache_read_configured, cache_creation_configured, source, source_model_id,
-		raw_json, updated_at_ms, synced_at_ms
-	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		raw_json, updated_at_ms, synced_at_ms, capability, billing_unit, unit_price
+	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	on conflict(model) do update set
 		prompt_per_1m = excluded.prompt_per_1m,
 		completion_per_1m = excluded.completion_per_1m,
@@ -360,7 +370,10 @@ func (r *repository) UpsertSynced(ctx context.Context, prices map[string]model.M
 		source_model_id = excluded.source_model_id,
 		raw_json = excluded.raw_json,
 		updated_at_ms = excluded.updated_at_ms,
-		synced_at_ms = excluded.synced_at_ms
+		synced_at_ms = excluded.synced_at_ms,
+		capability = excluded.capability,
+		billing_unit = excluded.billing_unit,
+		unit_price = excluded.unit_price
 	where lower(trim(coalesce(model_prices.source, ''))) <> 'manual'`)
 	if err != nil {
 		return model.ModelPriceSyncResult{}, err
@@ -429,6 +442,9 @@ func (r *repository) UpsertSynced(ctx context.Context, prices map[string]model.M
 			nullString(price.RawJSON),
 			now,
 			now,
+			nullString(price.Capability),
+			nullString(price.BillingUnit),
+			price.UnitPrice,
 		)
 		if err != nil {
 			return model.ModelPriceSyncResult{}, err

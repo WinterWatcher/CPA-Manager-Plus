@@ -49,6 +49,8 @@ type AnalyticsFilter struct {
 	SourceHashes     []string
 	ProjectIDs       []string
 	RequestTypes     []string
+	Capabilities     []string
+	BillingUnits     []string
 	IncludeFailed    bool
 	FailedOnly       bool
 	MinLatencyMS     int64
@@ -77,6 +79,8 @@ type FilterOptionValues struct {
 	AuthFiles        []string
 	ProjectIDs       []string
 	RequestTypes     []string
+	Capabilities     []string
+	BillingUnits     []string
 	HeaderErrorKinds []string
 	HeaderErrorCodes []string
 	HeaderQuotaPlans []string
@@ -127,6 +131,12 @@ type TimelinePoint struct {
 	CachedTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	TotalTokens         int64
+	Capability          string
+	BillingUnit         string
+	Quantity            float64
+	InputQuantity       float64
+	OutputQuantity      float64
 	AvgLatencyMS        sql.NullFloat64
 	LatencySamples      int64
 }
@@ -156,6 +166,11 @@ type HeatmapPoint struct {
 	CacheReadTokens     int64
 	CacheCreationTokens int64
 	TotalTokens         int64
+	Capability          string
+	BillingUnit         string
+	Quantity            float64
+	InputQuantity       float64
+	OutputQuantity      float64
 }
 
 type ChannelModelStat struct {
@@ -179,6 +194,11 @@ type ChannelModelStat struct {
 	CacheReadTokens       int64
 	CacheCreationTokens   int64
 	TotalTokens           int64
+	Capability            string
+	BillingUnit           string
+	Quantity              float64
+	InputQuantity         float64
+	OutputQuantity        float64
 	AvgLatencyMS          sql.NullFloat64
 	LatencySamples        int64
 }
@@ -220,6 +240,11 @@ type AccountModelStat struct {
 	CacheReadTokens              int64
 	CacheCreationTokens          int64
 	TotalTokens                  int64
+	Capability                   string
+	BillingUnit                  string
+	Quantity                     float64
+	InputQuantity                float64
+	OutputQuantity               float64
 	LastSeenMS                   int64
 	AvgLatencyMS                 sql.NullFloat64
 	LatencySumMS                 int64
@@ -263,6 +288,11 @@ type AccountWindowModelStat struct {
 	CacheReadTokens     int64
 	CacheCreationTokens int64
 	TotalTokens         int64
+	Capability          string
+	BillingUnit         string
+	Quantity            float64
+	InputQuantity       float64
+	OutputQuantity      float64
 	LastSeenMS          int64
 }
 
@@ -291,6 +321,11 @@ type CredentialModelStat struct {
 	CacheReadTokens       int64
 	CacheCreationTokens   int64
 	TotalTokens           int64
+	Capability            string
+	BillingUnit           string
+	Quantity              float64
+	InputQuantity         float64
+	OutputQuantity        float64
 	LastSeenMS            int64
 	AvgLatencyMS          sql.NullFloat64
 	LatencySamples        int64
@@ -372,6 +407,11 @@ type APIKeyModelStat struct {
 	CacheReadTokens       int64
 	CacheCreationTokens   int64
 	TotalTokens           int64
+	Capability            string
+	BillingUnit           string
+	Quantity              float64
+	InputQuantity         float64
+	OutputQuantity        float64
 	LastSeenMS            int64
 	AvgLatencyMS          sql.NullFloat64
 	LatencySamples        int64
@@ -441,6 +481,11 @@ type EventPageItem struct {
 	CacheCreationTokens    int64
 	ReasoningTokens        int64
 	TotalTokens            int64
+	Capability             string
+	BillingUnit            string
+	Quantity               float64
+	InputQuantity          float64
+	OutputQuantity         float64
 	LatencyMS              sql.NullInt64
 	TTFTMS                 sql.NullInt64
 	Failed                 bool
@@ -550,9 +595,14 @@ select
 	coalesce(sum(` + longCachedExpr + `), 0),
 	coalesce(sum(` + longCacheReadExpr + `), 0),
 	coalesce(sum(` + longCacheCreationExpr + `), 0),
-	coalesce(sum(total_tokens), 0)
+	coalesce(sum(total_tokens), 0),
+	coalesce(capability, ''),
+	coalesce(billing_unit, ''),
+	coalesce(sum(case when failed = 0 then quantity else 0 end), 0),
+	coalesce(sum(case when failed = 0 then input_quantity else 0 end), 0),
+	coalesce(sum(case when failed = 0 then output_quantity else 0 end), 0)
 from banded_usage_events ` + where + `
-group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
+group by analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, ''), coalesce(capability, ''), coalesce(billing_unit, '')
 order by calls desc`
 	if limit > 0 {
 		query = pricingBandedUsageEventsCTE + `, filtered as (
@@ -584,10 +634,15 @@ select
 	coalesce(sum(` + longCachedFExpr + `), 0),
 	coalesce(sum(` + longCacheReadFExpr + `), 0),
 	coalesce(sum(` + longCacheCreationFExpr + `), 0),
-	coalesce(sum(f.total_tokens), 0)
+	coalesce(sum(f.total_tokens), 0),
+	coalesce(f.capability, ''),
+	coalesce(f.billing_unit, ''),
+	coalesce(sum(case when f.failed = 0 then f.quantity else 0 end), 0),
+	coalesce(sum(case when f.failed = 0 then f.input_quantity else 0 end), 0),
+	coalesce(sum(case when f.failed = 0 then f.output_quantity else 0 end), 0)
 from filtered f
 join top_models t on t.model = f.analytics_model_value
-group by f.analytics_model_value, billing_model, f.pricing_model_value, f.context_threshold_tokens_value, coalesce(f.service_tier, '')
+group by f.analytics_model_value, billing_model, f.pricing_model_value, f.context_threshold_tokens_value, coalesce(f.service_tier, ''), coalesce(f.capability, ''), coalesce(f.billing_unit, '')
 order by max(t.model_calls) desc, f.analytics_model_value, calls desc`
 		args = append(args, limit)
 	}
@@ -620,6 +675,11 @@ order by max(t.model_calls) desc, f.analytics_model_value, calls desc`
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
 			&stat.TotalTokens,
+			&stat.Capability,
+			&stat.BillingUnit,
+			&stat.Quantity,
+			&stat.InputQuantity,
+			&stat.OutputQuantity,
 		); err != nil {
 			return nil, err
 		}
@@ -1067,6 +1127,14 @@ func (r *repository) FilterOptionValuesWithFilter(ctx context.Context, filter An
 	if err != nil {
 		return FilterOptionValues{}, err
 	}
+	capabilities, err := r.distinctFilterValues(ctx, filter, "coalesce(capability, '')")
+	if err != nil {
+		return FilterOptionValues{}, err
+	}
+	billingUnits, err := r.distinctFilterValues(ctx, filter, "coalesce(billing_unit, '')")
+	if err != nil {
+		return FilterOptionValues{}, err
+	}
 	headerErrorKinds, err := r.distinctFilterValues(ctx, filter, "coalesce(header_error_kind, '')")
 	if err != nil {
 		return FilterOptionValues{}, err
@@ -1088,6 +1156,8 @@ func (r *repository) FilterOptionValuesWithFilter(ctx context.Context, filter An
 		AuthFiles:        authFiles,
 		ProjectIDs:       projectIDs,
 		RequestTypes:     requestTypes,
+		Capabilities:     capabilities,
+		BillingUnits:     billingUnits,
 		HeaderErrorKinds: headerErrorKinds,
 		HeaderErrorCodes: headerErrorCodes,
 		HeaderQuotaPlans: headerQuotaPlans,
@@ -1424,9 +1494,14 @@ select
 	coalesce(sum(`+longCacheCreationExpr+`), 0),
 	coalesce(sum(total_tokens), 0),
 	avg(nullif(latency_ms, 0)),
-	count(nullif(latency_ms, 0))
+	count(nullif(latency_ms, 0)),
+	coalesce(capability, ''),
+	coalesce(billing_unit, ''),
+	coalesce(sum(case when failed = 0 then quantity else 0 end), 0),
+	coalesce(sum(case when failed = 0 then input_quantity else 0 end), 0),
+	coalesce(sum(case when failed = 0 then output_quantity else 0 end), 0)
 from banded_usage_events `+where+`
-group by auth_index, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
+group by auth_index, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, ''), coalesce(capability, ''), coalesce(billing_unit, '')
 order by count(*) desc`, args...)
 	if err != nil {
 		return nil, err
@@ -1464,6 +1539,11 @@ order by count(*) desc`, args...)
 			&stat.TotalTokens,
 			&stat.AvgLatencyMS,
 			&stat.LatencySamples,
+			&stat.Capability,
+			&stat.BillingUnit,
+			&stat.Quantity,
+			&stat.InputQuantity,
+			&stat.OutputQuantity,
 		); err != nil {
 			return nil, err
 		}
@@ -1551,9 +1631,14 @@ select
 	max(timestamp_ms),
 	coalesce(sum(case when latency_ms is not null and latency_ms != 0 then latency_ms else 0 end), 0),
 	avg(nullif(latency_ms, 0)),
-	count(nullif(latency_ms, 0))
+	count(nullif(latency_ms, 0)),
+	coalesce(capability, ''),
+	coalesce(billing_unit, ''),
+	coalesce(sum(case when failed = 0 then quantity else 0 end), 0),
+	coalesce(sum(case when failed = 0 then input_quantity else 0 end), 0),
+	coalesce(sum(case when failed = 0 then output_quantity else 0 end), 0)
 from banded_usage_events `+where+`
-group by account_snapshot, auth_label_snapshot, coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index, source_hash, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
+group by account_snapshot, auth_label_snapshot, coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index, source_hash, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, ''), coalesce(capability, ''), coalesce(billing_unit, '')
 order by max(timestamp_ms) desc, count(*) desc`, args...)
 	if err != nil {
 		return nil, err
@@ -1596,6 +1681,11 @@ order by max(timestamp_ms) desc, count(*) desc`, args...)
 			&stat.LatencySumMS,
 			&stat.AvgLatencyMS,
 			&stat.LatencySamples,
+			&stat.Capability,
+			&stat.BillingUnit,
+			&stat.Quantity,
+			&stat.InputQuantity,
+			&stat.OutputQuantity,
 		); err != nil {
 			return nil, err
 		}
@@ -2403,9 +2493,14 @@ select
 	coalesce(sum(total_tokens), 0),
 	max(timestamp_ms),
 	avg(nullif(latency_ms, 0)),
-	count(nullif(latency_ms, 0))
+	count(nullif(latency_ms, 0)),
+	coalesce(capability, ''),
+	coalesce(billing_unit, ''),
+	coalesce(sum(case when failed = 0 then quantity else 0 end), 0),
+	coalesce(sum(case when failed = 0 then input_quantity else 0 end), 0),
+	coalesce(sum(case when failed = 0 then output_quantity else 0 end), 0)
 from banded_usage_events `+where+`
-group by api_key_hash, account_snapshot, auth_label_snapshot, coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index, source_hash, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, '')
+group by api_key_hash, account_snapshot, auth_label_snapshot, coalesce(nullif(auth_provider_snapshot, ''), provider, ''), auth_account_id_snapshot, auth_index, source_hash, analytics_model_value, billing_model, pricing_model_value, context_threshold_tokens_value, coalesce(service_tier, ''), coalesce(capability, ''), coalesce(billing_unit, '')
 order by max(timestamp_ms) desc, count(*) desc`, args...)
 	if err != nil {
 		return nil, err
@@ -2446,6 +2541,11 @@ order by max(timestamp_ms) desc, count(*) desc`, args...)
 			&stat.LastSeenMS,
 			&stat.AvgLatencyMS,
 			&stat.LatencySamples,
+			&stat.Capability,
+			&stat.BillingUnit,
+			&stat.Quantity,
+			&stat.InputQuantity,
+			&stat.OutputQuantity,
 		); err != nil {
 			return nil, err
 		}
@@ -3009,6 +3109,8 @@ func analyticsWhere(filter AnalyticsFilter) (string, []any) {
 	addInCondition("source_hash", filter.SourceHashes)
 	addInCondition(usageidentity.SQLProjectIDSnapshotExpression(""), filter.ProjectIDs)
 	addInCondition("executor_type", filter.RequestTypes)
+	addInCondition("capability", filter.Capabilities)
+	addInCondition("billing_unit", filter.BillingUnits)
 	addInCondition("header_error_kind", filter.HeaderErrorKinds)
 	addInCondition("header_error_code", filter.HeaderErrorCodes)
 	addInCondition("header_quota_plan_type", filter.HeaderQuotaPlans)

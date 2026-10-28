@@ -165,6 +165,10 @@ func eventFilterConditions(filter AnalyticsFilter, prefix string, projected bool
 	addInCondition(column("source_hash"), filter.SourceHashes)
 	addInCondition(usageidentity.SQLProjectIDSnapshotExpression(prefix), filter.ProjectIDs)
 	addInCondition(column("executor_type"), filter.RequestTypes)
+	if !projected {
+		addInCondition(column("capability"), filter.Capabilities)
+		addInCondition(column("billing_unit"), filter.BillingUnits)
+	}
 	addInCondition(column("header_error_kind"), filter.HeaderErrorKinds)
 	addInCondition(column("header_error_code"), filter.HeaderErrorCodes)
 	addInCondition(column("header_quota_plan_type"), filter.HeaderQuotaPlans)

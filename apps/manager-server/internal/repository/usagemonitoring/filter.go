@@ -15,6 +15,8 @@ func SupportsStatsFilter(filter AnalyticsFilter) bool {
 		len(filter.HeaderErrorCodes) == 0 &&
 		len(filter.HeaderQuotaPlans) == 0 &&
 		len(filter.HeaderTraceIDs) == 0 &&
+		len(filter.Capabilities) == 0 &&
+		len(filter.BillingUnits) == 0 &&
 		filter.MinLatencyMS == 0 &&
 		strings.TrimSpace(filter.CacheStatus) == ""
 }
@@ -45,6 +47,8 @@ func PrefersEventProjection(filter AnalyticsFilter) bool {
 		len(filter.SourceHashes) > 0 ||
 		len(filter.ProjectIDs) > 0 ||
 		len(filter.RequestTypes) > 0 ||
+		len(filter.Capabilities) > 0 ||
+		len(filter.BillingUnits) > 0 ||
 		len(filter.HeaderErrorKinds) > 0 ||
 		len(filter.HeaderErrorCodes) > 0 ||
 		len(filter.HeaderQuotaPlans) > 0 ||
@@ -68,6 +72,8 @@ func SupportsSelectorFilter(filter AnalyticsFilter) bool {
 		len(filter.SourceHashes) == 0 &&
 		len(filter.ProjectIDs) == 0 &&
 		len(filter.RequestTypes) == 0 &&
+		len(filter.Capabilities) == 0 &&
+		len(filter.BillingUnits) == 0 &&
 		len(filter.HeaderErrorKinds) == 0 &&
 		len(filter.HeaderErrorCodes) == 0 &&
 		len(filter.HeaderQuotaPlans) == 0 &&

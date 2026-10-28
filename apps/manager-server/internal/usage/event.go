@@ -870,6 +870,39 @@ func NormalizeRaw(raw []byte) (Event, error) {
 		totalTokens = cacheAccounting.TotalInputTokens + maxInt64(outputTokens, 0) + maxInt64(reasoningTokens, 0)
 	}
 
+	capability := strings.ToLower(readString(record, "capability", "Capability"))
+	billingUnit := strings.ToLower(readString(record, "billing_unit", "billingUnit", "unit"))
+	var quantity, inputQuantity, outputQuantity float64
+	if q := readOptionalFloat(record, "quantity", "Quantity"); q != nil {
+		quantity = *q
+	}
+	if iq := readOptionalFloat(record, "input_quantity", "inputQuantity"); iq != nil {
+		inputQuantity = *iq
+	}
+	if oq := readOptionalFloat(record, "output_quantity", "outputQuantity"); oq != nil {
+		outputQuantity = *oq
+	}
+
+	if capability == "video" {
+		isPoll := method == "GET" || strings.Contains(strings.ToLower(path), "/status") || strings.Contains(strings.ToLower(endpoint), "status") || strings.Contains(strings.ToLower(path), "/tasks/")
+		if isPoll {
+			quantity = 0
+			inputQuantity = 0
+			outputQuantity = 0
+		}
+	}
+
+	if quantity == 0 && (inputQuantity > 0 || outputQuantity > 0) {
+		quantity = inputQuantity + outputQuantity
+	} else if quantity > 0 && inputQuantity == 0 && outputQuantity == 0 {
+		switch capability {
+		case "asr", "embedding", "rerank":
+			inputQuantity = quantity
+		case "image", "video":
+			outputQuantity = quantity
+		}
+	}
+
 	event := Event{
 		RequestID:                     readString(record, "request_id", "requestId", "id"),
 		TimestampMS:                   timestampMS,
@@ -911,6 +944,11 @@ func NormalizeRaw(raw []byte) (Event, error) {
 		CacheInputMode:                cacheAccounting.Mode,
 		InputTokens:                   inputTokens,
 		OutputTokens:                  outputTokens,
+		Capability:                    capability,
+		BillingUnit:                   billingUnit,
+		Quantity:                      quantity,
+		InputQuantity:                 inputQuantity,
+		OutputQuantity:                outputQuantity,
 		ReasoningTokens:               reasoningTokens,
 		CachedTokens:                  cachedTokens,
 		CacheTokens:                   cacheTokens,
@@ -1344,6 +1382,13 @@ func buildEventHash(event Event) string {
 	}
 	if event.LatencyMS != nil {
 		parts = append(parts, strconv.FormatInt(*event.LatencyMS, 10))
+	}
+	if event.Capability != "" || event.BillingUnit != "" || event.Quantity != 0 {
+		parts = append(parts,
+			event.Capability,
+			event.BillingUnit,
+			strconv.FormatFloat(event.Quantity, 'f', -1, 64),
+		)
 	}
 	return hashString(strings.Join(parts, "|"))
 }

@@ -425,8 +425,9 @@ func (r *repository) InsertBatch(ctx context.Context, events []model.UsageEvent)
 		response_metadata_json, header_quota_recover_at_ms, header_quota_used_percent, header_quota_plan_type, header_error_kind, header_error_code, header_trace_id,
 		fail_body, raw_json,
 		response_model, session_id, parent_session_id, access_token_sha256, generate, stream,
+		capability, billing_unit, quantity, input_quantity, output_quantity,
 		created_at_ms
-		) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return model.InsertResult{}, err
 	}
@@ -517,6 +518,11 @@ func (r *repository) InsertBatch(ctx context.Context, events []model.UsageEvent)
 			nullString(ev.AccessTokenSHA256),
 			nullBool(ev.Generate),
 			nullBool(ev.Stream),
+			nullString(ev.Capability),
+			nullString(ev.BillingUnit),
+			ev.Quantity,
+			ev.InputQuantity,
+			ev.OutputQuantity,
 			ev.CreatedAtMS,
 		)
 		if err != nil {
@@ -578,6 +584,7 @@ func (r *repository) ListRecent(ctx context.Context, limit int) ([]model.UsageEv
 		coalesce(response_metadata_json, ''), header_quota_recover_at_ms, header_quota_used_percent, coalesce(header_quota_plan_type, ''), coalesce(header_error_kind, ''), coalesce(header_error_code, ''), coalesce(header_trace_id, ''),
 		coalesce(response_model, ''), coalesce(session_id, ''), coalesce(parent_session_id, ''), coalesce(access_token_sha256, ''),
 		generate, stream,
+		coalesce(capability, ''), coalesce(billing_unit, ''), coalesce(quantity, 0), coalesce(input_quantity, 0), coalesce(output_quantity, 0),
 		coalesce(raw_json, ''), created_at_ms
 		from usage_events
 		order by timestamp_ms desc, id desc
@@ -593,6 +600,8 @@ func (r *repository) ListRecent(ctx context.Context, limit int) ([]model.UsageEv
 		var requestID, provider, executorType, endpoint, method, path, clientIP, xForwardedFor, userAgent, authType, authIndex, source, sourceHash, apiKeyHash, accountSnapshot, authLabelSnapshot, authFileSnapshot, authProviderSnapshot, authAccountIDSnapshot, authProjectIDSnapshot, requestedModel, resolvedModel, reasoningEffort, serviceTier, requestServiceTier, responseServiceTier, cacheInputMode, failSummary sql.NullString
 		var responseMetadataJSON, quotaPlanType, errorKind, errorCode, traceID, rawJSON string
 		var responseModel, sessionID, parentSessionID, accessTokenSHA256 sql.NullString
+		var capability, billingUnit string
+		var quantity, inputQuantity, outputQuantity float64
 		var generateVal, streamVal sql.NullInt64
 		var authSnapshotAt sql.NullInt64
 		var latency, ttft sql.NullInt64
@@ -664,11 +673,21 @@ func (r *repository) ListRecent(ctx context.Context, limit int) ([]model.UsageEv
 			&accessTokenSHA256,
 			&generateVal,
 			&streamVal,
+			&capability,
+			&billingUnit,
+			&quantity,
+			&inputQuantity,
+			&outputQuantity,
 			&rawJSON,
 			&event.CreatedAtMS,
 		); err != nil {
 			return nil, err
 		}
+		event.Capability = capability
+		event.BillingUnit = billingUnit
+		event.Quantity = quantity
+		event.InputQuantity = inputQuantity
+		event.OutputQuantity = outputQuantity
 		event.RequestID = requestID.String
 		event.AnalyticsModel = usageidentity.AnalyticsModelForRequest(event.Model, requestedModel.String)
 		event.Provider = provider.String

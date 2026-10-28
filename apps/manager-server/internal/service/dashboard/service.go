@@ -840,6 +840,11 @@ func costForStat(stat store.ModelStat, prices map[string]store.ModelPrice) float
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
+		Capability:              stat.Capability,
+		BillingUnit:             stat.BillingUnit,
+		Quantity:                stat.Quantity,
+		InputQuantity:           stat.InputQuantity,
+		OutputQuantity:          stat.OutputQuantity,
 	}, prices)
 }
 
@@ -857,6 +862,11 @@ func costForChannelStat(stat store.ChannelModelStat, prices map[string]store.Mod
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
+		Capability:              stat.Capability,
+		BillingUnit:             stat.BillingUnit,
+		Quantity:                stat.Quantity,
+		InputQuantity:           stat.InputQuantity,
+		OutputQuantity:          stat.OutputQuantity,
 	}, prices)
 }
 

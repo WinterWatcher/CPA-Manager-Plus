@@ -140,14 +140,16 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 		`p.requested_model as model, p.analytics_model, p.resolved_model, p.service_tier, p.failed,
 		p.normalized_total_input_tokens, p.output_tokens, p.reasoning_tokens,
 		p.cached_tokens, p.cache_tokens, p.cache_read_tokens,
-		p.cache_creation_tokens, p.total_tokens`,
+		p.cache_creation_tokens, p.total_tokens,
+		'' as capability, '' as billing_unit, 0 as quantity, 0 as input_quantity, 0 as output_quantity`,
 		usageidentity.SQLEffectiveRequestedModelExpression("e.model", "e.requested_model")+`, `+usageidentity.SQLRequestAnalyticsModelExpression("e.model", "e.requested_model")+`, coalesce(e.resolved_model, ''),
 		coalesce(e.service_tier, ''), coalesce(e.failed, 0),
 		coalesce(e.normalized_total_input_tokens, e.input_tokens, 0),
 		coalesce(e.output_tokens, 0), coalesce(e.reasoning_tokens, 0),
 		coalesce(e.cached_tokens, 0), coalesce(e.cache_tokens, 0),
 		coalesce(e.cache_read_tokens, 0), coalesce(e.cache_creation_tokens, 0),
-		coalesce(e.total_tokens, 0)`,
+		coalesce(e.total_tokens, 0),
+		coalesce(e.capability, ''), coalesce(e.billing_unit, ''), coalesce(e.quantity, 0), coalesce(e.input_quantity, 0), coalesce(e.output_quantity, 0)`,
 		eventSourceOptions{ProjectionComplete: projectionComplete},
 	)
 	query := fmt.Sprintf(`with base_events as (%s), priced_events as (
@@ -194,10 +196,15 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 		coalesce(sum(case when normalized_total_input_tokens > %[3]d then max(max(cached_tokens, cache_tokens) - max(cache_read_tokens, 0) - max(cache_creation_tokens, 0), 0) else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > %[3]d then cache_read_tokens else 0 end), 0),
 		coalesce(sum(case when normalized_total_input_tokens > %[3]d then cache_creation_tokens else 0 end), 0),
-		coalesce(sum(total_tokens), 0)
+		coalesce(sum(total_tokens), 0),
+		coalesce(capability, ''),
+		coalesce(billing_unit, ''),
+		coalesce(sum(case when failed = 0 then quantity else 0 end), 0),
+		coalesce(sum(case when failed = 0 then input_quantity else 0 end), 0),
+		coalesce(sum(case when failed = 0 then output_quantity else 0 end), 0)
 	from banded_events
 		group by analytics_model, billing_model_value, pricing_model_value,
-		context_threshold_tokens_value, service_tier
+		context_threshold_tokens_value, service_tier, coalesce(capability, ''), coalesce(billing_unit, '')
 	order by count(*) desc`, source, model.ModelPriceBaseContextThreshold, usage.LongContextInputTokenThreshold)
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -227,6 +234,11 @@ func (r *repository) LoadModelStats(ctx context.Context, filter AnalyticsFilter)
 			&stat.LongCacheReadTokens,
 			&stat.LongCacheCreationTokens,
 			&stat.TotalTokens,
+			&stat.Capability,
+			&stat.BillingUnit,
+			&stat.Quantity,
+			&stat.InputQuantity,
+			&stat.OutputQuantity,
 		); err != nil {
 			return nil, state, false, err
 		}

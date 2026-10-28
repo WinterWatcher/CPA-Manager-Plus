@@ -108,6 +108,8 @@ func (r *repository) LoadFilterOptions(ctx context.Context, filter AnalyticsFilt
 		AuthFiles:        decoded[1],
 		ProjectIDs:       decoded[2],
 		RequestTypes:     decoded[3],
+		Capabilities:     []string{},
+		BillingUnits:     []string{},
 		HeaderErrorKinds: decoded[4],
 		HeaderErrorCodes: decoded[5],
 		HeaderQuotaPlans: decoded[6],

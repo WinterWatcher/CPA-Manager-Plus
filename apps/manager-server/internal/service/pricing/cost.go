@@ -26,6 +26,22 @@ type ModelTokens struct {
 	LongCachedTokens        int64
 	LongCacheReadTokens     int64
 	LongCacheCreationTokens int64
+
+	Capability     string
+	BillingUnit    string
+	Quantity       float64
+	InputQuantity  float64
+	OutputQuantity float64
+	Failed         bool
+}
+
+// CostResult captures the evaluated dollar cost and resolution status.
+type CostResult struct {
+	Cost           float64
+	Status         string // "priced", "unpriced", "missing_quantity", "unsupported_unit"
+	Capability     string
+	BillingUnit    string
+	BillableAmount float64
 }
 
 // CostForModel computes the dollar cost for a single (model, tokens) pair.
@@ -36,11 +52,7 @@ type ModelTokens struct {
 // must pass the compatibility cached value, not CPA's Claude mirror copy.
 // Older payloads keep the OpenAI-style cached-in-input behavior.
 func CostForModel(modelName string, tokens ModelTokens, prices map[string]model.ModelPrice) float64 {
-	price, ok := resolveModelPrice(modelName, prices)
-	if !ok {
-		return 0
-	}
-	return costForPrice(modelName, tokens, price)
+	return EvaluateCost([]string{modelName}, "", tokens, prices).Cost
 }
 
 func costForPrice(modelName string, tokens ModelTokens, price model.ModelPrice) float64 {
@@ -172,21 +184,16 @@ func ServiceTierMultiplier(modelName string, serviceTier string) float64 {
 	}
 }
 
-// CostForModelWithServiceTier selects context or explicit service-tier prices
-// before falling back to the compatibility multiplier for older price books.
-func CostForModelWithServiceTier(modelName string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice) float64 {
-	price, ok := resolveModelPrice(modelName, prices)
-	if !ok {
-		return 0
-	}
-	return costForPriceWithServiceTier(modelName, serviceTier, tokens, price)
+var allowedCapabilityUnits = map[string]bool{
+	"tokens":        true,
+	"audio_seconds": true,
+	"characters":    true,
+	"images":        true,
+	"video_tasks":   true,
 }
 
-// CostForModelCandidatesWithServiceTier uses the first candidate to determine
-// model-specific billing behavior and the first priced candidate for rates.
-// Callers should pass resolved/upstream model first, followed by the requested
-// display model or alias as a price fallback.
-func CostForModelCandidatesWithServiceTier(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice) float64 {
+// EvaluateCost evaluates the monetary cost and pricing status for candidate models.
+func EvaluateCost(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice) CostResult {
 	seen := map[string]bool{}
 	candidates := make([]string, 0, len(modelNames))
 	for _, modelName := range modelNames {
@@ -201,26 +208,176 @@ func CostForModelCandidatesWithServiceTier(modelNames []string, serviceTier stri
 	if len(candidates) > 0 {
 		behaviorModel = candidates[0]
 	}
+
+	var price model.ModelPrice
+	found := false
 	if pricingModel := strings.TrimSpace(tokens.PricingModel); pricingModel != "" {
-		if price, ok := prices[pricingModel]; ok {
-			return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
+		if p, ok := prices[pricingModel]; ok {
+			price = p
+			found = true
 		}
 	}
-	for _, modelName := range candidates {
-		price, ok := prices[modelName]
-		if !ok {
-			continue
+	if !found {
+		for _, modelName := range candidates {
+			if p, ok := prices[modelName]; ok {
+				price = p
+				found = true
+				break
+			}
 		}
-		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
 	}
-	for _, modelName := range candidates {
-		price, ok := officialGPT56Price(modelName)
-		if !ok {
-			continue
+	if !found {
+		for _, modelName := range candidates {
+			if p, ok := officialGPT56Price(modelName); ok {
+				price = p
+				found = true
+				break
+			}
 		}
-		return costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
 	}
-	return 0
+	if !found {
+		return CostResult{Cost: 0, Status: "unpriced"}
+	}
+
+	if tokens.Failed {
+		return CostResult{Cost: 0, Status: "priced"}
+	}
+
+	capability := strings.ToLower(strings.TrimSpace(tokens.Capability))
+	if capability == "" {
+		capability = strings.ToLower(strings.TrimSpace(price.Capability))
+	}
+	billingUnit := strings.ToLower(strings.TrimSpace(tokens.BillingUnit))
+	if billingUnit == "" {
+		billingUnit = strings.ToLower(strings.TrimSpace(price.BillingUnit))
+	}
+
+	// Validate billing unit if specified
+	if billingUnit != "" && !allowedCapabilityUnits[billingUnit] {
+		return CostResult{Cost: 0, Status: "unsupported_unit", Capability: capability, BillingUnit: billingUnit}
+	}
+
+	switch capability {
+	case "embedding":
+		// 按输入Token；使用输入费率；不产生completion费用
+		cost := costForSegment(
+			tokens.InputTokens,
+			0, // No completion fee
+			tokens.CachedTokens,
+			tokens.CacheReadTokens,
+			tokens.CacheCreationTokens,
+			price,
+			1,
+			0,
+		)
+		return CostResult{Cost: cost, Status: "priced", Capability: "embedding", BillingUnit: "tokens", BillableAmount: float64(tokens.InputTokens)}
+
+	case "rerank":
+		// 按输入Token或Provider返回的输入数量；不产生completion费用；不要把排序结果数量直接当成Token。
+		if billingUnit == "tokens" || (billingUnit == "" && tokens.InputTokens > 0) {
+			cost := costForSegment(
+				tokens.InputTokens,
+				0, // No completion fee
+				tokens.CachedTokens,
+				tokens.CacheReadTokens,
+				tokens.CacheCreationTokens,
+				price,
+				1,
+				0,
+			)
+			return CostResult{Cost: cost, Status: "priced", Capability: "rerank", BillingUnit: "tokens", BillableAmount: float64(tokens.InputTokens)}
+		}
+		qty := tokens.Quantity
+		if qty <= 0 {
+			qty = tokens.InputQuantity
+		}
+		if qty <= 0 {
+			return CostResult{Cost: 0, Status: "missing_quantity", Capability: "rerank", BillingUnit: billingUnit}
+		}
+		cost := qty * price.UnitPrice
+		return CostResult{Cost: cost, Status: "priced", Capability: "rerank", BillingUnit: billingUnit, BillableAmount: qty}
+
+	case "asr":
+		// 按audio_seconds；使用unitPrice；不写入prompt/completion；缺少音频时长时标记unpriced或missing_quantity。
+		qty := tokens.Quantity
+		if qty <= 0 {
+			qty = tokens.InputQuantity
+		}
+		if qty <= 0 {
+			return CostResult{Cost: 0, Status: "missing_quantity", Capability: "asr", BillingUnit: "audio_seconds"}
+		}
+		cost := qty * price.UnitPrice
+		return CostResult{Cost: cost, Status: "priced", Capability: "asr", BillingUnit: "audio_seconds", BillableAmount: qty}
+
+	case "tts":
+		// 按characters或audio_seconds；由billingUnit决定；缺少quantity时不收费。
+		qty := tokens.Quantity
+		if qty <= 0 {
+			qty = tokens.InputQuantity
+		}
+		if qty <= 0 {
+			return CostResult{Cost: 0, Status: "missing_quantity", Capability: "tts", BillingUnit: billingUnit}
+		}
+		cost := qty * price.UnitPrice
+		return CostResult{Cost: cost, Status: "priced", Capability: "tts", BillingUnit: billingUnit, BillableAmount: qty}
+
+	case "image":
+		// 按images；使用unitPrice；图片生成失败时不计成功费用，按现有失败事件语义处理。
+		qty := tokens.Quantity
+		if qty <= 0 {
+			qty = tokens.OutputQuantity
+		}
+		if qty <= 0 {
+			return CostResult{Cost: 0, Status: "missing_quantity", Capability: "image", BillingUnit: "images"}
+		}
+		cost := qty * price.UnitPrice
+		return CostResult{Cost: cost, Status: "priced", Capability: "image", BillingUnit: "images", BillableAmount: qty}
+
+	case "video":
+		// 按video_tasks；使用unitPrice；submit任务和status轮询不要重复计费；只在实际生成任务创建成功时计一次；status轮询记录请求次数但不能重复增加任务费用。
+		qty := tokens.Quantity
+		if qty <= 0 {
+			return CostResult{Cost: 0, Status: "priced", Capability: "video", BillingUnit: "video_tasks", BillableAmount: 0}
+		}
+		cost := qty * price.UnitPrice
+		return CostResult{Cost: cost, Status: "priced", Capability: "video", BillingUnit: "video_tasks", BillableAmount: qty}
+
+	default:
+		if billingUnit != "" && billingUnit != "tokens" {
+			qty := tokens.Quantity
+			if qty <= 0 {
+				qty = tokens.InputQuantity + tokens.OutputQuantity
+			}
+			if qty <= 0 {
+				return CostResult{Cost: 0, Status: "missing_quantity", Capability: capability, BillingUnit: billingUnit}
+			}
+			cost := qty * price.UnitPrice
+			return CostResult{Cost: cost, Status: "priced", Capability: capability, BillingUnit: billingUnit, BillableAmount: qty}
+		}
+		// Chat or legacy token pricing
+		cost := costForPriceWithServiceTier(behaviorModel, serviceTier, tokens, price)
+		return CostResult{
+			Cost:           cost,
+			Status:         "priced",
+			Capability:     "chat",
+			BillingUnit:    "tokens",
+			BillableAmount: float64(tokens.InputTokens + tokens.OutputTokens),
+		}
+	}
+}
+
+// CostForModelWithServiceTier selects context or explicit service-tier prices
+// before falling back to the compatibility multiplier for older price books.
+func CostForModelWithServiceTier(modelName string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice) float64 {
+	return EvaluateCost([]string{modelName}, serviceTier, tokens, prices).Cost
+}
+
+// CostForModelCandidatesWithServiceTier uses the first candidate to determine
+// model-specific billing behavior and the first priced candidate for rates.
+// Callers should pass resolved/upstream model first, followed by the requested
+// display model or alias as a price fallback.
+func CostForModelCandidatesWithServiceTier(modelNames []string, serviceTier string, tokens ModelTokens, prices map[string]model.ModelPrice) float64 {
+	return EvaluateCost(modelNames, serviceTier, tokens, prices).Cost
 }
 
 // SumCost folds CostForModel over a slice of (model, tokens) tuples.

@@ -295,6 +295,11 @@ func Migrate(db *sql.DB) error {
 			access_token_sha256 text,
 			generate integer,
 			stream integer,
+			capability text,
+			billing_unit text,
+			quantity real not null default 0,
+			input_quantity real not null default 0,
+			output_quantity real not null default 0,
 			created_at_ms integer not null
 		)`,
 		`create table if not exists usage_rollup_checkpoints (
@@ -737,7 +742,10 @@ func Migrate(db *sql.DB) error {
 			source_model_id text,
 			raw_json text,
 			updated_at_ms integer not null,
-			synced_at_ms integer
+			synced_at_ms integer,
+			capability text,
+			billing_unit text,
+			unit_price real default 0
 		)`,
 		`create table if not exists model_price_context_tiers (
 			model text not null,
@@ -3104,6 +3112,11 @@ func ensureUsageEventSnapshotColumns(db *sql.DB) error {
 		{name: "access_token_sha256", definition: "text"},
 		{name: "generate", definition: "integer"},
 		{name: "stream", definition: "integer"},
+		{name: "capability", definition: "text"},
+		{name: "billing_unit", definition: "text"},
+		{name: "quantity", definition: "real not null default 0"},
+		{name: "input_quantity", definition: "real not null default 0"},
+		{name: "output_quantity", definition: "real not null default 0"},
 	}
 	for _, column := range columns {
 		if _, ok := existing[column.name]; ok {
@@ -3166,6 +3179,9 @@ func ensureModelPriceColumns(db *sql.DB) error {
 		{name: "completion_configured", definition: "integer not null default 0"},
 		{name: "cache_read_configured", definition: "integer not null default 0"},
 		{name: "cache_creation_configured", definition: "integer not null default 0"},
+		{name: "capability", definition: "text"},
+		{name: "billing_unit", definition: "text"},
+		{name: "unit_price", definition: "real default 0"},
 	}
 	added := map[string]bool{}
 	for _, column := range columns {

@@ -136,6 +136,8 @@ type Filters struct {
 	SourceHashes     []string `json:"source_hashes"`
 	ProjectIDs       []string `json:"project_ids"`
 	RequestTypes     []string `json:"request_types"`
+	Capabilities     []string `json:"capabilities"`
+	BillingUnits     []string `json:"billing_units"`
 	HeaderErrorKinds []string `json:"header_error_kinds"`
 	HeaderErrorCodes []string `json:"header_error_codes"`
 	HeaderQuotaPlans []string `json:"header_quota_plans"`
@@ -558,6 +560,9 @@ type ModelStat struct {
 	CacheHitInputTokens int64   `json:"cache_hit_input_tokens"`
 	CacheHitRate        float64 `json:"cache_hit_rate"`
 	TotalTokens         int64   `json:"total_tokens"`
+	Capability          string  `json:"capability,omitempty"`
+	BillingUnit         string  `json:"billing_unit,omitempty"`
+	Quantity            float64 `json:"quantity,omitempty"`
 	Cost                float64 `json:"cost"`
 }
 
@@ -770,6 +775,8 @@ type FilterOptions struct {
 	APIKeyCount      int               `json:"api_key_count,omitempty"`
 	ProjectIDs       []string          `json:"project_ids,omitempty"`
 	RequestTypes     []string          `json:"request_types,omitempty"`
+	Capabilities     []string          `json:"capabilities,omitempty"`
+	BillingUnits     []string          `json:"billing_units,omitempty"`
 	HeaderErrorKinds []string          `json:"header_error_kinds,omitempty"`
 	HeaderErrorCodes []string          `json:"header_error_codes,omitempty"`
 	HeaderQuotaPlans []string          `json:"header_quota_plans,omitempty"`
@@ -2163,6 +2170,8 @@ func buildFilter(req Request) store.AnalyticsFilter {
 		SourceHashes:     req.Filters.SourceHashes,
 		ProjectIDs:       req.Filters.ProjectIDs,
 		RequestTypes:     req.Filters.RequestTypes,
+		Capabilities:     req.Filters.Capabilities,
+		BillingUnits:     req.Filters.BillingUnits,
 		HeaderErrorKinds: req.Filters.HeaderErrorKinds,
 		HeaderErrorCodes: req.Filters.HeaderErrorCodes,
 		HeaderQuotaPlans: req.Filters.HeaderQuotaPlans,
@@ -2256,6 +2265,8 @@ func (s *Service) filterOptionsWithSource(
 		AuthFiles:        optionValues.AuthFiles,
 		ProjectIDs:       optionValues.ProjectIDs,
 		RequestTypes:     optionValues.RequestTypes,
+		Capabilities:     optionValues.Capabilities,
+		BillingUnits:     optionValues.BillingUnits,
 		HeaderErrorKinds: optionValues.HeaderErrorKinds,
 		HeaderErrorCodes: optionValues.HeaderErrorCodes,
 		HeaderQuotaPlans: optionValues.HeaderQuotaPlans,
@@ -2277,6 +2288,8 @@ func filterOptionsMatchMainScope(filter store.AnalyticsFilter) bool {
 		len(filter.SourceHashes) == 0 &&
 		len(filter.ProjectIDs) == 0 &&
 		len(filter.RequestTypes) == 0 &&
+		len(filter.Capabilities) == 0 &&
+		len(filter.BillingUnits) == 0 &&
 		len(filter.HeaderErrorKinds) == 0 &&
 		len(filter.HeaderErrorCodes) == 0 &&
 		len(filter.HeaderQuotaPlans) == 0 &&
@@ -2998,6 +3011,9 @@ func buildModelStats(stats []store.ModelStat, prices map[string]store.ModelPrice
 			CacheHitInputTokens: stat.CacheHitInputTokens,
 			CacheHitRate:        usage.CacheHitRateFromTotals(stat.CacheHitTokens, stat.CacheHitInputTokens),
 			TotalTokens:         stat.TotalTokens,
+			Capability:          stat.Capability,
+			BillingUnit:         stat.BillingUnit,
+			Quantity:            stat.Quantity,
 			Cost:                stat.Cost,
 		})
 	}
@@ -3016,6 +3032,9 @@ type aggregatedModelStat struct {
 	CacheHitTokens      int64
 	CacheHitInputTokens int64
 	TotalTokens         int64
+	Capability          string
+	BillingUnit         string
+	Quantity            float64
 	Cost                float64
 }
 
@@ -3050,6 +3069,13 @@ func aggregateModelStats(stats []store.ModelStat, prices map[string]store.ModelP
 		entry.CacheHitTokens += cacheHitTokens
 		entry.CacheHitInputTokens += cacheHitInputTokens
 		entry.TotalTokens += stat.TotalTokens
+		if entry.Capability == "" {
+			entry.Capability = stat.Capability
+		}
+		if entry.BillingUnit == "" {
+			entry.BillingUnit = stat.BillingUnit
+		}
+		entry.Quantity += stat.Quantity
 		entry.Cost += costForStat(stat, prices)
 	}
 	result := make([]aggregatedModelStat, 0, len(order))
@@ -4604,6 +4630,11 @@ func costForStat(stat store.ModelStat, prices map[string]store.ModelPrice) float
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
+		Capability:              stat.Capability,
+		BillingUnit:             stat.BillingUnit,
+		Quantity:                stat.Quantity,
+		InputQuantity:           stat.InputQuantity,
+		OutputQuantity:          stat.OutputQuantity,
 	}, prices)
 }
 
@@ -4621,6 +4652,11 @@ func costForTimelinePoint(point store.TimelinePoint, prices map[string]store.Mod
 		LongCachedTokens:        point.LongCachedTokens,
 		LongCacheReadTokens:     point.LongCacheReadTokens,
 		LongCacheCreationTokens: point.LongCacheCreationTokens,
+		Capability:              point.Capability,
+		BillingUnit:             point.BillingUnit,
+		Quantity:                point.Quantity,
+		InputQuantity:           point.InputQuantity,
+		OutputQuantity:          point.OutputQuantity,
 	}, prices)
 }
 
@@ -4638,6 +4674,11 @@ func costForHeatmapPoint(point store.HeatmapPoint, prices map[string]store.Model
 		LongCachedTokens:        point.LongCachedTokens,
 		LongCacheReadTokens:     point.LongCacheReadTokens,
 		LongCacheCreationTokens: point.LongCacheCreationTokens,
+		Capability:              point.Capability,
+		BillingUnit:             point.BillingUnit,
+		Quantity:                point.Quantity,
+		InputQuantity:           point.InputQuantity,
+		OutputQuantity:          point.OutputQuantity,
 	}, prices)
 }
 
@@ -4655,6 +4696,11 @@ func costForChannelStat(stat store.ChannelModelStat, prices map[string]store.Mod
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
+		Capability:              stat.Capability,
+		BillingUnit:             stat.BillingUnit,
+		Quantity:                stat.Quantity,
+		InputQuantity:           stat.InputQuantity,
+		OutputQuantity:          stat.OutputQuantity,
 	}, prices)
 }
 
@@ -4672,6 +4718,11 @@ func costForAccountModelStat(stat store.AccountModelStat, prices map[string]stor
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
+		Capability:              stat.Capability,
+		BillingUnit:             stat.BillingUnit,
+		Quantity:                stat.Quantity,
+		InputQuantity:           stat.InputQuantity,
+		OutputQuantity:          stat.OutputQuantity,
 	}, prices)
 }
 
@@ -4689,6 +4740,11 @@ func costForAPIKeyModelStat(stat store.APIKeyModelStat, prices map[string]store.
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
+		Capability:              stat.Capability,
+		BillingUnit:             stat.BillingUnit,
+		Quantity:                stat.Quantity,
+		InputQuantity:           stat.InputQuantity,
+		OutputQuantity:          stat.OutputQuantity,
 	}, prices)
 }
 
@@ -4706,6 +4762,11 @@ func costForCredentialModelStat(stat store.CredentialModelStat, prices map[strin
 		LongCachedTokens:        stat.LongCachedTokens,
 		LongCacheReadTokens:     stat.LongCacheReadTokens,
 		LongCacheCreationTokens: stat.LongCacheCreationTokens,
+		Capability:              stat.Capability,
+		BillingUnit:             stat.BillingUnit,
+		Quantity:                stat.Quantity,
+		InputQuantity:           stat.InputQuantity,
+		OutputQuantity:          stat.OutputQuantity,
 	}, prices)
 }
 
