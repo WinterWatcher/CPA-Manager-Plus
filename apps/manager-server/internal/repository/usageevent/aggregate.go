@@ -121,6 +121,8 @@ type RecentFailure struct {
 	HeaderErrorKind        string
 	HeaderErrorCode        string
 	HeaderTraceID          string
+	Capability             string
+	BillingUnit            string
 }
 
 var aggregateSQL = fmt.Sprintf(`select
@@ -359,7 +361,9 @@ var recentFailuresSQL = `select
 	coalesce(header_quota_plan_type, ''),
 	coalesce(header_error_kind, ''),
 	coalesce(header_error_code, ''),
-	coalesce(header_trace_id, '')
+	coalesce(header_trace_id, ''),
+	coalesce(capability, ''),
+	coalesce(billing_unit, '')
 from usage_events
 where failed = 1 and timestamp_ms >= ? and timestamp_ms < ?
 order by timestamp_ms desc, id desc
@@ -403,6 +407,8 @@ func (r *repository) RecentFailuresBetween(ctx context.Context, fromMs, toMs int
 			&rf.HeaderErrorKind,
 			&rf.HeaderErrorCode,
 			&rf.HeaderTraceID,
+			&rf.Capability,
+			&rf.BillingUnit,
 		); err != nil {
 			return nil, err
 		}

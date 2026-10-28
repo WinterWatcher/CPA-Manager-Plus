@@ -2645,7 +2645,9 @@ func (r *repository) RecentFailuresWithFilter(ctx context.Context, filter Analyt
 	coalesce(header_quota_plan_type, ''),
 	coalesce(header_error_kind, ''),
 	coalesce(header_error_code, ''),
-	coalesce(header_trace_id, '')
+	coalesce(header_trace_id, ''),
+	coalesce(capability, ''),
+	coalesce(billing_unit, '')
 from usage_events `+where+`
 and failed = 1
 order by timestamp_ms desc, id desc
@@ -2682,6 +2684,8 @@ limit ?`, args...)
 			&failure.HeaderErrorKind,
 			&failure.HeaderErrorCode,
 			&failure.HeaderTraceID,
+			&failure.Capability,
+			&failure.BillingUnit,
 		); err != nil {
 			return nil, err
 		}

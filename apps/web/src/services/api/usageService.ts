@@ -974,6 +974,8 @@ export interface DashboardRecentFailure {
   header_error_kind?: string;
   header_error_code?: string;
   header_trace_id?: string;
+  capability?: string;
+  billing_unit?: string;
 }
 
 export interface DashboardSummaryResponse {

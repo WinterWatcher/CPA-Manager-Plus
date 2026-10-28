@@ -739,3 +739,95 @@ func dashboardEvent(
 		CreatedAtMS:     timestampMS,
 	}
 }
+
+func TestRecentFailuresCapturesCapabilityAndOmitsZeroDuration(t *testing.T) {
+	db := newDashboardTestStore(t)
+
+	ctx := context.Background()
+	nowMS := int64(1_000_000)
+	todayStart := int64(900_000)
+
+	zeroLatency := int64(0)
+	validLatency := int64(150)
+
+	events := []usage.Event{
+		{
+			EventHash:       testCanonicalHash("hash-fail-1"),
+			TimestampMS:     nowMS - 2000,
+			Timestamp:       time.UnixMilli(nowMS - 2000).UTC().Format(time.RFC3339Nano),
+			Model:           "dall-e-3",
+			Endpoint:        "POST /v1/images/generations",
+			Method:          "POST",
+			Path:            "/v1/images/generations",
+			AuthIndex:       "auth-1",
+			Source:          "user@example.com",
+			SourceHash:      testCanonicalHash("source-hash"),
+			APIKeyHash:      testCanonicalHash("api-key-hash"),
+			AccountSnapshot: "user@example.com",
+			LatencyMS:       &zeroLatency,
+			Failed:          true,
+			FailStatusCode:  500,
+			FailSummary:     "generation failed",
+			Capability:      "image",
+			BillingUnit:     "image",
+			CreatedAtMS:     nowMS - 2000,
+		},
+		{
+			EventHash:       testCanonicalHash("hash-fail-2"),
+			TimestampMS:     nowMS - 1000,
+			Timestamp:       time.UnixMilli(nowMS - 1000).UTC().Format(time.RFC3339Nano),
+			Model:           "whisper-1",
+			Endpoint:        "POST /v1/audio/transcriptions",
+			Method:          "POST",
+			Path:            "/v1/audio/transcriptions",
+			AuthIndex:       "auth-1",
+			Source:          "user@example.com",
+			SourceHash:      testCanonicalHash("source-hash"),
+			APIKeyHash:      testCanonicalHash("api-key-hash"),
+			AccountSnapshot: "user@example.com",
+			LatencyMS:       &validLatency,
+			Failed:          true,
+			FailStatusCode:  400,
+			FailSummary:     "audio decode error",
+			Capability:      "asr",
+			BillingUnit:     "minute",
+			CreatedAtMS:     nowMS - 1000,
+		},
+	}
+
+	if _, err := db.InsertEvents(ctx, events); err != nil {
+		t.Fatalf("insert events: %v", err)
+	}
+
+	resp, err := New(db).Summary(ctx, SummaryParams{
+		TodayStartMS:   todayStart,
+		NowMS:          nowMS,
+		TopModels:      5,
+		RecentFailures: 5,
+	})
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+
+	if len(resp.RecentFailures) != 2 {
+		t.Fatalf("expected 2 recent failures, got %d", len(resp.RecentFailures))
+	}
+
+	// Most recent is whisper-1 (nowMS - 1000)
+	rf0 := resp.RecentFailures[0]
+	if rf0.Model != "whisper-1" || rf0.Capability != "asr" || rf0.BillingUnit != "minute" {
+		t.Errorf("rf0 mismatch: model=%q, cap=%q, unit=%q", rf0.Model, rf0.Capability, rf0.BillingUnit)
+	}
+	if rf0.DurationMS == nil || *rf0.DurationMS != 150 {
+		t.Errorf("rf0 DurationMS expected 150, got %#v", rf0.DurationMS)
+	}
+
+	// Older is dall-e-3 (nowMS - 2000), had latency 0 -> DurationMS must be nil
+	rf1 := resp.RecentFailures[1]
+	if rf1.Model != "dall-e-3" || rf1.Capability != "image" || rf1.BillingUnit != "image" {
+		t.Errorf("rf1 mismatch: model=%q, cap=%q, unit=%q", rf1.Model, rf1.Capability, rf1.BillingUnit)
+	}
+	if rf1.DurationMS != nil {
+		t.Errorf("rf1 DurationMS expected nil for 0 latency, got %d", *rf1.DurationMS)
+	}
+}

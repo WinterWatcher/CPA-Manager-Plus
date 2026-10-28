@@ -247,7 +247,7 @@ describe('ProxyManagementPage UI', () => {
     });
 
     // Default: all 5 nodes present
-    let rows = renderer.root.findAllByType('tr');
+    const rows = renderer.root.findAllByType('tr');
     expect(rows.length).toBeGreaterThanOrEqual(6);
 
     // Filter to SG using Select component

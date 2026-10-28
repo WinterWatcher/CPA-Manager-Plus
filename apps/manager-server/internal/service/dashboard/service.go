@@ -196,6 +196,8 @@ type RecentFailure struct {
 	HeaderErrorKind        string                        `json:"header_error_kind,omitempty"`
 	HeaderErrorCode        string                        `json:"header_error_code,omitempty"`
 	HeaderTraceID          string                        `json:"header_trace_id,omitempty"`
+	Capability             string                        `json:"capability,omitempty"`
+	BillingUnit            string                        `json:"billing_unit,omitempty"`
 }
 
 type SummaryResponse struct {
@@ -770,7 +772,7 @@ func buildRecentFailures(failures []store.RecentFailure) []RecentFailure {
 			AuthProviderSnapshot:   failure.AuthProviderSnapshot,
 			AuthProjectIDSnapshot:  failure.AuthProjectIDSnapshot,
 			Endpoint:               failure.Endpoint,
-			DurationMS:             nullableInt(failure.LatencyMS.Valid, failure.LatencyMS.Int64),
+			DurationMS:             nullablePositiveInt(failure.LatencyMS.Valid, failure.LatencyMS.Int64),
 			FailStatusCode:         nullableInt(failure.FailStatusCode.Valid, failure.FailStatusCode.Int64),
 			FailSummary:            failure.FailSummary,
 			ResponseMetadata:       failure.ResponseMetadata,
@@ -780,6 +782,8 @@ func buildRecentFailures(failures []store.RecentFailure) []RecentFailure {
 			HeaderErrorKind:        failure.HeaderErrorKind,
 			HeaderErrorCode:        failure.HeaderErrorCode,
 			HeaderTraceID:          failure.HeaderTraceID,
+			Capability:             failure.Capability,
+			BillingUnit:            failure.BillingUnit,
 		})
 	}
 	return result
@@ -918,6 +922,13 @@ func nullableFloat(valid bool, value float64) *float64 {
 
 func nullableInt(valid bool, value int64) *int64 {
 	if !valid {
+		return nil
+	}
+	return &value
+}
+
+func nullablePositiveInt(valid bool, value int64) *int64 {
+	if !valid || value <= 0 {
 		return nil
 	}
 	return &value

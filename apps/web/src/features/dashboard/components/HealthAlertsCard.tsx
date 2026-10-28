@@ -101,7 +101,14 @@ export function HealthAlertsCard({
       planType: failure.header_quota_plan_type,
       t,
     })?.fullLabel;
+    const capabilityText =
+      failure.capability && failure.capability !== 'chat'
+        ? `${t('monitoring.capability', { defaultValue: 'Capability' })}: ${failure.capability}${
+            failure.billing_unit ? ` (${failure.billing_unit})` : ''
+          }`
+        : '';
     const diagnostics = [
+      capabilityText,
       failure.header_error_code || failure.header_error_kind
         ? `${t('monitoring.header_error')}: ${[failure.header_error_kind, failure.header_error_code]
             .filter(Boolean)
@@ -214,11 +221,18 @@ export function HealthAlertsCard({
                   <span className={styles.time}>
                     {new Date(failure.timestamp_ms).toLocaleTimeString(i18n.language)}
                   </span>
-                  <span className={styles.model}>{failure.model}</span>
+                  <span className={styles.model}>
+                    {failure.model}
+                    {failure.capability && failure.capability !== 'chat' ? ` · ${failure.capability}` : ''}
+                  </span>
                 </div>
                 <div className={styles.failureDetail}>
                   {renderFailureName(display, tooltip)}
-                  <span>{formatDurationMs(failure.duration_ms, { locale: i18n.language })}</span>
+                  <span>
+                    {typeof failure.duration_ms === 'number' && failure.duration_ms > 0
+                      ? formatDurationMs(failure.duration_ms, { locale: i18n.language })
+                      : '--'}
+                  </span>
                 </div>
               </div>
             );
