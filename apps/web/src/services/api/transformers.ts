@@ -6,6 +6,7 @@ import {
   type GeminiKeyConfig,
   type ModelAlias,
   type OpenAIProviderConfig,
+  type ProviderCapability,
   type ProviderKeyConfig,
 } from '@/types';
 import type { Config } from '@/types/config';
@@ -375,6 +376,51 @@ const normalizeOpenAIProvider = (provider: unknown): OpenAIProviderConfig | null
     provider['auth-index'] ?? provider.authIndex ?? provider['auth_index']
   );
   if (authIndex) result.authIndex = authIndex;
+
+  const rawCap = normalizeString(provider.capability);
+  if (
+    rawCap &&
+    ['chat', 'embedding', 'rerank', 'asr', 'tts', 'image', 'video'].includes(rawCap)
+  ) {
+    result.capability = rawCap as ProviderCapability;
+  }
+  const supportedEndpoints = normalizeStringList(
+    provider['supported-endpoints'] ??
+      provider.supportedEndpoints ??
+      provider['supported_endpoints']
+  );
+  if (supportedEndpoints && supportedEndpoints.length) {
+    result.supportedEndpoints = supportedEndpoints;
+  }
+  const billingUnit = normalizeString(
+    provider['billing-unit'] ?? provider.billingUnit ?? provider['billing_unit']
+  );
+  if (billingUnit) {
+    result.billingUnit = billingUnit;
+  }
+  const unitPrice = normalizeNumber(
+    provider['unit-price'] ?? provider.unitPrice ?? provider['unit_price']
+  );
+  if (unitPrice !== undefined) {
+    result.unitPrice = unitPrice;
+  }
+  const isAsync = normalizeBoolean(
+    provider['is-async'] ?? provider.isAsync ?? provider['is_async']
+  );
+  if (isAsync !== undefined) {
+    result.isAsync = isAsync;
+  }
+  const canTrackUsage = normalizeBoolean(
+    provider['can-track-usage'] ?? provider.canTrackUsage ?? provider['can_track_usage']
+  );
+  if (canTrackUsage !== undefined) {
+    result.canTrackUsage = canTrackUsage;
+  }
+  const description = normalizeString(provider.description);
+  if (description) {
+    result.description = description;
+  }
+
   return result;
 };
 

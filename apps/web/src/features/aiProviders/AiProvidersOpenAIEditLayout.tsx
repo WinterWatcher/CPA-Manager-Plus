@@ -568,6 +568,13 @@ export function AiProvidersOpenAIEditLayout() {
       showNotification(t('notification.openai_provider_required'), 'error');
       return;
     }
+    if (form.billingUnit && form.billingUnit.trim() !== '') {
+      const unit = form.billingUnit.trim().toLowerCase();
+      if (!['tokens', 'audio_seconds', 'characters', 'images', 'video_tasks'].includes(unit)) {
+        showNotification(t('model_prices.rule_error_invalid_billing_unit'), 'warning');
+        return;
+      }
+    }
     if (hasInvalidWeight) return;
     if (hasInvalidThinkingLevels(form.modelEntries)) return;
 

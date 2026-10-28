@@ -133,6 +133,23 @@ const OPENAI_PROVIDER_FIELDS = [
   'disable-cooling',
   'disableCooling',
   'disable_cooling',
+  'capability',
+  'supported-endpoints',
+  'supportedEndpoints',
+  'supported_endpoints',
+  'billing-unit',
+  'billingUnit',
+  'billing_unit',
+  'unit-price',
+  'unitPrice',
+  'unit_price',
+  'is-async',
+  'isAsync',
+  'is_async',
+  'can-track-usage',
+  'canTrackUsage',
+  'can_track_usage',
+  'description',
 ] as const;
 
 const MODEL_ALIAS_FIELDS = [
@@ -964,6 +981,21 @@ const serializeOpenAIProvider = (provider: OpenAIProviderConfig) => {
   if (models && models.length) payload.models = models;
   if (provider.priority !== undefined) payload.priority = provider.priority;
   if (provider.testModel) payload['test-model'] = provider.testModel;
+  if (provider.capability) payload.capability = provider.capability;
+  if (provider.supportedEndpoints && provider.supportedEndpoints.length) {
+    payload['supported-endpoints'] = provider.supportedEndpoints;
+  }
+  if (provider.billingUnit && provider.billingUnit.trim() !== '') {
+    const unit = provider.billingUnit.trim().toLowerCase();
+    if (!['tokens', 'audio_seconds', 'characters', 'images', 'video_tasks'].includes(unit)) {
+      throw new Error(`Invalid billing unit: ${provider.billingUnit}`);
+    }
+    payload['billing-unit'] = unit;
+  }
+  if (provider.unitPrice !== undefined) payload['unit-price'] = provider.unitPrice;
+  if (provider.isAsync !== undefined) payload['is-async'] = provider.isAsync;
+  if (provider.canTrackUsage !== undefined) payload['can-track-usage'] = provider.canTrackUsage;
+  if (provider.description?.trim()) payload.description = provider.description.trim();
   return payload;
 };
 

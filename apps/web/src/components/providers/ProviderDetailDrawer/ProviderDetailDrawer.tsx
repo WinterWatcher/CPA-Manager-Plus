@@ -244,6 +244,20 @@ export function ProviderDetailDrawer({
           {!row.enabled && (
             <div className={styles.disabledBadge}>{t('ai_providers.config_disabled_badge')}</div>
           )}
+          <FieldRow
+            label={t('ai_providers.health_status_label')}
+            value={row.enabled ? t('ai_providers.status_healthy') : t('ai_providers.status_disabled')}
+          />
+          <FieldRow
+            label={t('ai_providers.price_availability_label')}
+            value={
+              row.unitPrice !== undefined
+                ? row.unitPrice === 0
+                  ? `${t('common.free', { defaultValue: '免费' })} (0)`
+                  : `${row.unitPrice} / ${t(`ai_providers.billing_unit_${row.billingUnit ?? 'tokens'}`, { defaultValue: row.billingUnit ?? 'tokens' })}`
+                : t('ai_providers.price_unconfigured')
+            }
+          />
           {row.description && (
             <FieldRow label={t('ai_providers.description_label')} value={row.description} />
           )}
@@ -266,7 +280,11 @@ export function ProviderDetailDrawer({
           {row.unitPrice !== undefined && (
             <FieldRow
               label={t('ai_providers.unit_price_label')}
-              value={`${row.unitPrice} / ${t(`ai_providers.billing_unit_${row.billingUnit ?? 'tokens'}`, { defaultValue: row.billingUnit ?? 'tokens' })}`}
+              value={
+                row.unitPrice === 0
+                  ? `${t('common.free', { defaultValue: '免费' })} (0)`
+                  : `${row.unitPrice} / ${t(`ai_providers.billing_unit_${row.billingUnit ?? 'tokens'}`, { defaultValue: row.billingUnit ?? 'tokens' })}`
+              }
             />
           )}
           <FieldRow
