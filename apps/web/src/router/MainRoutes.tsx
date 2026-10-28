@@ -24,6 +24,7 @@ import { UsageMaintenancePage } from '@/pages/UsageMaintenancePage';
 import { MonitoringCenterPage } from '@/pages/MonitoringCenterPage';
 import { AccountActionCandidatesPage } from '@/pages/AccountActionCandidatesPage';
 import { ModelPricesPage } from '@/pages/ModelPricesPage';
+import { ProxyManagementPage } from '@/pages/ProxyManagementPage';
 import { ConfigPage } from '@/pages/ConfigPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { PluginResourcePage } from '@/pages/PluginResourcePage';
@@ -165,6 +166,7 @@ const mainRoutes: RouteObject[] = [
   },
   { path: '/ai-providers', element: <AiProvidersPage /> },
   { path: '/ai-providers/*', element: <AiProvidersPage /> },
+  { path: '/proxy', element: <ProxyManagementPage /> },
   { path: '/accounts', element: <AccountsPage /> },
   { path: '/oauth', element: <OAuthPage /> },
   {

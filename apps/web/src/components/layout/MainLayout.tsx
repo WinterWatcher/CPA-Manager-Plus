@@ -24,6 +24,7 @@ import {
   IconSidebarOauth,
   IconSidebarPlugins,
   IconSidebarProviders,
+  IconSidebarProxy,
   IconSidebarSystem,
   IconSidebarUsage,
 } from '@/components/ui/icons';
@@ -62,6 +63,7 @@ const GITHUB_REPOSITORY_URL = 'https://github.com/seakee/CPA-Manager-Plus';
 const sidebarIcons: Record<string, ReactNode> = {
   dashboard: <IconSidebarDashboard size={SIDEBAR_ICON_SIZE} />,
   aiProviders: <IconSidebarProviders size={SIDEBAR_ICON_SIZE} />,
+  proxy: <IconSidebarProxy size={SIDEBAR_ICON_SIZE} />,
   authFiles: <IconSidebarAuthFiles size={SIDEBAR_ICON_SIZE} />,
   oauth: <IconSidebarOauth size={SIDEBAR_ICON_SIZE} />,
   usageAnalytics: <IconSidebarUsage size={SIDEBAR_ICON_SIZE} />,
@@ -590,6 +592,15 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
         label: t('nav.ai_providers'),
         shortLabel: navShortLabel('nav.ai_providers', t('nav.ai_providers')),
         icon: sidebarIcons.aiProviders,
+      },
+      {
+        path: '/proxy',
+        label: t('nav.proxy_management', { defaultValue: '代理管理' }),
+        shortLabel: navShortLabel(
+          'nav.proxy_management',
+          t('nav.proxy_management', { defaultValue: '代理管理' })
+        ),
+        icon: sidebarIcons.proxy,
       },
       ...pluginControlNavItems,
     ],
