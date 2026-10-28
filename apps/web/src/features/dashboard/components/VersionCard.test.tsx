@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { ComponentProps } from 'react';
 import type { ConnectionStatus } from '@/types';
 import type { PanelFeatureAvailability } from '@/hooks/usePanelFeatureAvailability';
-import { VersionCard } from './VersionCard';
+import { formatBuildTime, VersionCard } from './VersionCard';
 import styles from './VersionCard.module.scss';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -855,5 +855,41 @@ describe('VersionCard external panel fallback', () => {
         node.props.className?.includes(styles.badgeUpdate)
     );
     expect(externalBadges).toHaveLength(0);
+  });
+
+  describe('formatBuildTime & build time rendering', () => {
+    it('handles various valid and invalid build date formats safely', () => {
+      expect(formatBuildTime(undefined, 'zh-CN', '未提供')).toBe('未提供');
+      expect(formatBuildTime(null, 'zh-CN', '未提供')).toBe('未提供');
+      expect(formatBuildTime('', 'zh-CN', '未提供')).toBe('未提供');
+      expect(formatBuildTime('dev', 'zh-CN', '未提供')).toBe('未提供');
+      expect(formatBuildTime('DEV', 'zh-CN', '未提供')).toBe('未提供');
+      expect(formatBuildTime('unknown', 'zh-CN', '未提供')).toBe('未提供');
+      expect(formatBuildTime('not-a-date', 'zh-CN', '未提供')).toBe('未提供');
+
+      // RFC3339 / ISO 8601
+      const isoResult = formatBuildTime('2026-08-17T12:00:00Z', 'en');
+      expect(isoResult).not.toBe('未提供');
+      expect(isoResult).not.toContain('Invalid Date');
+
+      // Unix milliseconds
+      const unixMsResult = formatBuildTime('1770000000000', 'en');
+      expect(unixMsResult).not.toBe('未提供');
+      expect(unixMsResult).not.toContain('Invalid Date');
+
+      // Numeric ms
+      const numResult = formatBuildTime(1770000000000, 'en');
+      expect(numResult).not.toBe('未提供');
+      expect(numResult).not.toContain('Invalid Date');
+    });
+
+    it('renders fallback when serverBuildDate is dev and never renders Invalid Date', async () => {
+      const renderer = await renderCard({
+        health: { serverBuildDate: 'dev' },
+      });
+
+      const text = JSON.stringify(renderer.toJSON());
+      expect(text).not.toContain('Invalid Date');
+    });
   });
 });

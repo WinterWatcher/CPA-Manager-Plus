@@ -128,6 +128,37 @@ const renderBadgeValue = (badge: VersionBadge | null): ReactNode => {
   );
 };
 
+export function formatBuildTime(
+  rawDate: string | number | null | undefined,
+  locale?: string,
+  fallback = '—'
+): string {
+  if (!rawDate) return fallback;
+  if (typeof rawDate === 'string') {
+    const trimmed = rawDate.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'dev' || trimmed.toLowerCase() === 'unknown') {
+      return fallback;
+    }
+    if (/^\d+$/.test(trimmed)) {
+      const num = Number(trimmed);
+      if (Number.isFinite(num) && num > 0) {
+        const ms = trimmed.length <= 10 ? num * 1000 : num;
+        const d = new Date(ms);
+        return !Number.isNaN(d.getTime()) ? d.toLocaleString(locale) : fallback;
+      }
+      return fallback;
+    }
+    const d = new Date(trimmed);
+    return !Number.isNaN(d.getTime()) ? d.toLocaleString(locale) : fallback;
+  }
+  if (typeof rawDate === 'number' && Number.isFinite(rawDate) && rawDate > 0) {
+    const ms = rawDate < 1e11 ? rawDate * 1000 : rawDate;
+    const d = new Date(ms);
+    return !Number.isNaN(d.getTime()) ? d.toLocaleString(locale) : fallback;
+  }
+  return fallback;
+}
+
 export function VersionCard({
   appVersion,
   apiVersion,
@@ -373,9 +404,11 @@ export function VersionCard({
     t,
   ]);
 
-  const buildTimeDisplay = serverBuildDate
-    ? new Date(serverBuildDate).toLocaleString(i18n.language)
-    : t('dashboard.version_unknown');
+  const buildTimeDisplay = formatBuildTime(
+    serverBuildDate,
+    i18n.language,
+    t('dashboard.version_unprovided', { defaultValue: t('dashboard.version_unknown') })
+  );
 
   const collector = collectorStatus?.collector;
   const collectorLastError = collector?.lastError?.trim() || '';

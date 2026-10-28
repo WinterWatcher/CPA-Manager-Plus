@@ -52,6 +52,8 @@ func New(appCtx *app.Context) http.Handler {
 	mux.HandleFunc("/usage-service/updates/", middleware.WithCORS(appCtx.Config, updates.Handle))
 	mux.HandleFunc("/health", middleware.WithCORS(appCtx.Config, healthHandler.Health))
 	mux.HandleFunc("/status", middleware.WithCORS(appCtx.Config, systemHandler.Status))
+	mux.HandleFunc("/api/build-info", middleware.WithCORS(appCtx.Config, systemHandler.BuildInfo))
+	mux.HandleFunc("/build-info", middleware.WithCORS(appCtx.Config, systemHandler.BuildInfo))
 	mux.HandleFunc("/usage-service/info", middleware.WithCORS(appCtx.Config, systemHandler.Info))
 	mux.HandleFunc("/usage-service/config", middleware.WithCORS(appCtx.Config, managerConfigHandler.Handle))
 	mux.HandleFunc("/usage-service/account-processing-policy", middleware.WithCORS(appCtx.Config, automationHandler.Handle))

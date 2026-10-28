@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/app"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/middleware"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/http/response"
 )
@@ -25,6 +26,14 @@ type dataMigrationStatus struct {
 	StartedAtMS   int64  `json:"startedAtMs,omitempty"`
 	UpdatedAtMS   int64  `json:"updatedAtMs"`
 	FinishedAtMS  int64  `json:"finishedAtMs,omitempty"`
+}
+
+func (h *Handler) BuildInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		response.MethodNotAllowed(w)
+		return
+	}
+	response.JSON(w, http.StatusOK, buildinfo.Current())
 }
 
 func (h *Handler) Info(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +100,7 @@ func (h *Handler) Status(w http.ResponseWriter, r *http.Request) {
 			FinishedAtMS:  migration.FinishedAtMS,
 		},
 		"databaseMaintenance": databaseMaintenance,
+		"build":               buildinfo.Current(),
 	}
 	if h.App.DatabaseMaintenance != nil {
 		payload["database"] = h.App.DatabaseMaintenance.Snapshot()

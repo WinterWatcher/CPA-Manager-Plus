@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/buildinfo"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
 	collectorservice "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/collector"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/cpa"
@@ -34,16 +35,17 @@ type Result struct {
 }
 
 type InfoResult struct {
-	Service            string `json:"service"`
-	Mode               string `json:"mode"`
-	StartedAt          int64  `json:"startedAt"`
-	Configured         bool   `json:"configured"`
-	AdminReady         bool   `json:"adminReady"`
-	ProjectInitialized bool   `json:"projectInitialized"`
-	SetupRequired      bool   `json:"setupRequired"`
-	MigrationStatus    string `json:"migrationStatus,omitempty"`
-	DataKeyReady       bool   `json:"dataKeyReady"`
-	HasHistoricalData  bool   `json:"hasHistoricalData"`
+	Service            string         `json:"service"`
+	Mode               string         `json:"mode"`
+	StartedAt          int64          `json:"startedAt"`
+	Configured         bool           `json:"configured"`
+	AdminReady         bool           `json:"adminReady"`
+	ProjectInitialized bool           `json:"projectInitialized"`
+	SetupRequired      bool           `json:"setupRequired"`
+	MigrationStatus    string         `json:"migrationStatus,omitempty"`
+	DataKeyReady       bool           `json:"dataKeyReady"`
+	HasHistoricalData  bool           `json:"hasHistoricalData"`
+	Build              buildinfo.Info `json:"build"`
 }
 
 type Service struct {
@@ -94,6 +96,7 @@ func (s *Service) Info(ctx context.Context) (InfoResult, error) {
 		MigrationStatus:    bootstrapState.Status,
 		DataKeyReady:       bootstrapState.DataKeyReady,
 		HasHistoricalData:  bootstrapState.HasHistoricalData,
+		Build:              buildinfo.Current(),
 	}, nil
 }
 
