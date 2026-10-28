@@ -110,7 +110,7 @@ func TestHandlerNodesListAndFilters(t *testing.T) {
 	if list.Total != 4 {
 		t.Fatalf("expected 4 JP nodes, got %d", list.Total)
 	}
-	if list.Items[0].LatencyMS > list.Items[1].LatencyMS {
+	if list.Items[0].LatencyMS == nil || list.Items[1].LatencyMS == nil || *list.Items[0].LatencyMS > *list.Items[1].LatencyMS {
 		t.Fatalf("nodes not sorted by latency: %#v", list.Items)
 	}
 }

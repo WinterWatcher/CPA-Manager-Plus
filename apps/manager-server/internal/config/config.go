@@ -62,6 +62,15 @@ type Config struct {
 	QuotaCooldownEnvSet          bool
 	AccountActionsEnvSet         bool
 	AccountActionsAutoEnvSet     bool
+	ProxyControl                 ProxyControlConfig
+}
+
+type ProxyControlConfig struct {
+	Type           string
+	BaseURL        string
+	Token          string
+	TimeoutSeconds int
+	StateFile      string
 }
 
 type LoadOptions struct {
@@ -96,6 +105,11 @@ type fileConfig struct {
 	UsageImportTTLMinutes        int      `json:"usageImportSessionTTLMinutes,omitempty"`
 	UsageArchiveRetentionEnabled bool     `json:"usageArchiveRetentionEnabled,omitempty"`
 	UsageArchiveRetentionDays    *int64   `json:"usageArchiveRetentionDays,omitempty"`
+	ProxyControllerType           string   `json:"proxyControllerType,omitempty"`
+	ProxyControllerBaseURL        string   `json:"proxyControllerBaseUrl,omitempty"`
+	ProxyControllerTokenFile      string   `json:"proxyControllerTokenFile,omitempty"`
+	ProxyControllerTimeoutSeconds int      `json:"proxyControllerTimeoutSeconds,omitempty"`
+	ProxySelectionStateFile       string   `json:"proxySelectionStateFile,omitempty"`
 }
 
 func Load() (Config, error) {
@@ -154,6 +168,20 @@ func LoadWithOptions(options LoadOptions) (Config, error) {
 		dataKeyPath = filepath.Join(dataDir, "data.key")
 	}
 
+	proxyCtrlType := env("PROXY_CONTROLLER_TYPE", cfgFile.ProxyControllerType)
+	proxyBaseURL := env("PROXY_CONTROLLER_BASE_URL", stringFallback(cfgFile.ProxyControllerBaseURL, "http://127.0.0.1:6756"))
+	proxyTokenFile := "/run/secrets/skyvpn_controller_token"
+	if cfgFile.ProxyControllerTokenFile != "" {
+		proxyTokenFile = resolveConfigPath(cfgFile.ProxyControllerTokenFile, cfgDir)
+	}
+	proxyToken := readSecret("PROXY_CONTROLLER_TOKEN", "PROXY_CONTROLLER_TOKEN_FILE", proxyTokenFile)
+	proxyTimeout := envInt("PROXY_CONTROLLER_TIMEOUT_SECONDS", intFallback(cfgFile.ProxyControllerTimeoutSeconds, 10))
+	proxyStateFileFallback := filepath.Join(dataDir, "proxy-selection.json")
+	if cfgFile.ProxySelectionStateFile != "" {
+		proxyStateFileFallback = resolveConfigPath(cfgFile.ProxySelectionStateFile, cfgDir)
+	}
+	proxyStateFile := env("PROXY_SELECTION_STATE_FILE", proxyStateFileFallback)
+
 	return Config{
 		HTTPAddr:                     env("HTTP_ADDR", stringFallback(cfgFile.HTTPAddr, "0.0.0.0:18317")),
 		DataDir:                      dataDir,
@@ -202,6 +230,13 @@ func LoadWithOptions(options LoadOptions) (Config, error) {
 		QuotaCooldownEnvSet:       hasEnv("USAGE_QUOTA_COOLDOWN_ENABLED"),
 		AccountActionsEnvSet:      hasEnv("USAGE_ACCOUNT_ACTIONS_ENABLED"),
 		AccountActionsAutoEnvSet:  hasEnv("USAGE_ACCOUNT_ACTIONS_AUTO_DISABLE"),
+		ProxyControl: ProxyControlConfig{
+			Type:           proxyCtrlType,
+			BaseURL:        proxyBaseURL,
+			Token:          proxyToken,
+			TimeoutSeconds: proxyTimeout,
+			StateFile:      proxyStateFile,
+		},
 	}, nil
 }
 

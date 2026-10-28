@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/model"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/testutil"
@@ -70,7 +73,7 @@ func TestProxyControlEndToEndLifecycle(t *testing.T) {
 	if nodeList.Total != 4 {
 		t.Fatalf("expected 4 JP nodes, got %d", nodeList.Total)
 	}
-	if nodeList.Items[0].LatencyMS > nodeList.Items[1].LatencyMS {
+	if nodeList.Items[0].LatencyMS == nil || nodeList.Items[1].LatencyMS == nil || *nodeList.Items[0].LatencyMS > *nodeList.Items[1].LatencyMS {
 		t.Fatalf("nodes not sorted by latency: %#v", nodeList.Items)
 	}
 
@@ -230,5 +233,231 @@ func TestProxyControlEndToEndLifecycle(t *testing.T) {
 		if strings.Contains(histStr, forbidden) {
 			t.Fatalf("forbidden string %q found in history response: %s", forbidden, histStr)
 		}
+	}
+}
+
+func TestProductionDefaultFailsClosedWithoutMock(t *testing.T) {
+	cfg := testutil.NewConfig(t)
+	cfg.ProxyControl.Type = "" // explicitly empty (production default)
+	st := testutil.NewStore(t, cfg)
+	srv := httpapi.New(cfg, st, nil)
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	client := ts.Client()
+	adminAuth := "Bearer " + testutil.AdminKey
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/proxy/status", nil)
+	req.Header.Set("Authorization", adminAuth)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("status request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var status model.ProxyStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+
+	if status.ControllerAvailable {
+		t.Fatal("production default must have controller_available=false")
+	}
+	if !status.ReadOnly {
+		t.Fatal("production default must have read_only=true")
+	}
+	if status.CurrentNode != nil {
+		t.Fatalf("production default must have current_node=nil, got %#v", status.CurrentNode)
+	}
+
+	// Verify nodes list is empty
+	reqNodes, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/proxy/nodes", nil)
+	reqNodes.Header.Set("Authorization", adminAuth)
+	respNodes, err := client.Do(reqNodes)
+	if err != nil {
+		t.Fatalf("nodes request: %v", err)
+	}
+	defer respNodes.Body.Close()
+
+	var nodeList model.NodeList
+	if err := json.NewDecoder(respNodes.Body).Decode(&nodeList); err != nil {
+		t.Fatalf("decode nodeList: %v", err)
+	}
+	if len(nodeList.Items) != 0 || nodeList.Total != 0 {
+		t.Fatalf("expected 0 items in production default, got %d", nodeList.Total)
+	}
+}
+
+func TestSkyVPNControllerIntegrationLifecycle(t *testing.T) {
+	currentRaw := "JP-Tokyo-Residential-01"
+	targetRaw := "JP-Tokyo-Residential-02"
+	allRaw := []string{currentRaw, targetRaw, "SG-Singapore-01"}
+
+	var mu sync.Mutex
+	skyvpnCurrent := currentRaw
+	putCalls := 0
+
+	skyvpnHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer skyvpn-secret-token" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		path := r.URL.Path
+		switch {
+		case r.Method == http.MethodGet && path == "/proxies":
+			resp := map[string]any{
+				"proxies": map[string]any{
+					"select": map[string]any{
+						"all":  allRaw,
+						"now":  skyvpnCurrent,
+						"type": "Selector",
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+
+		case r.Method == http.MethodPut && path == "/proxies/select":
+			putCalls++
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if name, ok := body["name"]; ok && name != "" {
+				skyvpnCurrent = name
+			}
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodGet && strings.HasPrefix(path, "/proxies/") && strings.HasSuffix(path, "/delay"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"delay": 125})
+
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	skyvpnServer := httptest.NewServer(skyvpnHandler)
+	t.Cleanup(skyvpnServer.Close)
+
+	cfg := testutil.NewConfig(t)
+	cfg.ProxyControl = config.ProxyControlConfig{
+		Type:           "skyvpn",
+		BaseURL:        skyvpnServer.URL,
+		Token:          "skyvpn-secret-token",
+		TimeoutSeconds: 5,
+		StateFile:      filepath.Join(t.TempDir(), "proxy-selection.json"),
+	}
+	st := testutil.NewStore(t, cfg)
+	srv := httpapi.New(cfg, st, nil)
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	client := ts.Client()
+	adminAuth := "Bearer " + testutil.AdminKey
+
+	// 1. GET /api/proxy/status
+	reqStatus, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/proxy/status", nil)
+	reqStatus.Header.Set("Authorization", adminAuth)
+	respStatus, err := client.Do(reqStatus)
+	if err != nil {
+		t.Fatalf("status request: %v", err)
+	}
+	var status model.ProxyStatus
+	_ = json.NewDecoder(respStatus.Body).Decode(&status)
+	_ = respStatus.Body.Close()
+
+	if !status.ControllerAvailable || status.ReadOnly || status.CurrentNode == nil {
+		t.Fatalf("expected available and current node, got %#v", status)
+	}
+	if !status.CurrentNode.Selected {
+		t.Fatal("expected current node to be selected")
+	}
+
+	// 2. GET /api/proxy/nodes
+	reqNodes, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/proxy/nodes", nil)
+	reqNodes.Header.Set("Authorization", adminAuth)
+	respNodes, err := client.Do(reqNodes)
+	if err != nil {
+		t.Fatalf("nodes request: %v", err)
+	}
+	var nodeList model.NodeList
+	_ = json.NewDecoder(respNodes.Body).Decode(&nodeList)
+	_ = respNodes.Body.Close()
+
+	if nodeList.Total != 3 {
+		t.Fatalf("expected 3 nodes, got %d", nodeList.Total)
+	}
+
+	var targetPublicID string
+	for _, n := range nodeList.Items {
+		if !n.Selected && n.Country == "JP" {
+			targetPublicID = n.ID
+			break
+		}
+	}
+	if targetPublicID == "" {
+		t.Fatal("target JP public node ID not found")
+	}
+
+	// 3. Dry-run select must not call SkyVPN PUT
+	dryRunBody, _ := json.Marshal(model.SelectRequest{NodeID: targetPublicID, DryRun: true})
+	reqDryRun, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/proxy/select/dry-run", bytes.NewReader(dryRunBody))
+	reqDryRun.Header.Set("Authorization", adminAuth)
+	respDryRun, err := client.Do(reqDryRun)
+	if err != nil {
+		t.Fatalf("dry run request: %v", err)
+	}
+	var dryRunResult model.SelectResult
+	_ = json.NewDecoder(respDryRun.Body).Decode(&dryRunResult)
+	_ = respDryRun.Body.Close()
+
+	if !dryRunResult.Success || !dryRunResult.WouldSwitch {
+		t.Fatalf("dry run should succeed with would_switch=true: %#v", dryRunResult)
+	}
+	mu.Lock()
+	if putCalls != 0 {
+		t.Fatalf("dry run must NOT call PUT /proxies/select, called %d times", putCalls)
+	}
+	mu.Unlock()
+
+	// 4. Select target node with confirm=true
+	selectBody, _ := json.Marshal(model.SelectRequest{NodeID: targetPublicID, Confirm: true})
+	reqSelect, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/proxy/select", bytes.NewReader(selectBody))
+	reqSelect.Header.Set("Authorization", adminAuth)
+	respSelect, err := client.Do(reqSelect)
+	if err != nil {
+		t.Fatalf("select request: %v", err)
+	}
+	var selectResult model.SelectResult
+	_ = json.NewDecoder(respSelect.Body).Decode(&selectResult)
+	_ = respSelect.Body.Close()
+
+	if !selectResult.Success || selectResult.RolledBack {
+		t.Fatalf("select should succeed: %#v", selectResult)
+	}
+	if selectResult.CurrentNode == nil || selectResult.CurrentNode.ID != targetPublicID {
+		t.Fatalf("current node after switch should be %s, got %#v", targetPublicID, selectResult.CurrentNode)
+	}
+
+	// Confirm SkyVPN server now has targetRaw
+	mu.Lock()
+	if skyvpnCurrent != targetRaw {
+		t.Fatalf("skyvpn server current node expected %s, got %s", targetRaw, skyvpnCurrent)
+	}
+	if putCalls != 1 {
+		t.Fatalf("expected exactly 1 PUT call, got %d", putCalls)
+	}
+	mu.Unlock()
+
+	// Verify no token leak in responses
+	statusJSON, _ := json.Marshal(status)
+	if strings.Contains(string(statusJSON), "skyvpn-secret-token") {
+		t.Fatal("token leaked in status response")
 	}
 }

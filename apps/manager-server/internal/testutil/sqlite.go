@@ -29,6 +29,7 @@ func NewConfig(t testing.TB) config.Config {
 		UsageImportMaxSessions:    config.DefaultUsageImportMaxSessions,
 		UsageImportSessionTTL:     config.DefaultUsageImportSessionTTL,
 		UsageArchiveDir:           filepath.Join(dir, "usage-archives"),
+		ProxyControl:              config.ProxyControlConfig{Type: "mock"},
 	}
 }
 

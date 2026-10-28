@@ -50,7 +50,7 @@ func TestMockProxyControlStatusAndNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Nodes sort error: %v", err)
 	}
-	if sortedList.Items[0].LatencyMS > sortedList.Items[1].LatencyMS {
+	if sortedList.Items[0].LatencyMS == nil || sortedList.Items[1].LatencyMS == nil || *sortedList.Items[0].LatencyMS > *sortedList.Items[1].LatencyMS {
 		t.Fatalf("nodes not sorted by latency ascending: %#v", sortedList.Items)
 	}
 }

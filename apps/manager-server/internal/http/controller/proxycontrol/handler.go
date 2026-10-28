@@ -26,7 +26,7 @@ func (h *Handler) getService() proxycontrolsvc.ProxyControl {
 	if h.App != nil && h.App.ProxyControlService != nil {
 		return h.App.ProxyControlService
 	}
-	return proxycontrolsvc.NewMockProxyControl()
+	return proxycontrolsvc.NewUnavailableProxyControl()
 }
 
 func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {

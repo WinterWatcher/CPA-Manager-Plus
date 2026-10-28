@@ -239,8 +239,8 @@ export function ProxyManagementPage() {
         return (b.preferred_level ?? 0) - (a.preferred_level ?? 0);
       }
       if (sortBy === 'latency') {
-        const la = a.latency_ms > 0 ? a.latency_ms : 99999;
-        const lb = b.latency_ms > 0 ? b.latency_ms : 99999;
+        const la = typeof a.latency_ms === 'number' && a.latency_ms > 0 ? a.latency_ms : 99999;
+        const lb = typeof b.latency_ms === 'number' && b.latency_ms > 0 ? b.latency_ms : 99999;
         return la - lb;
       }
       if (sortBy === 'health') {
@@ -362,7 +362,9 @@ export function ProxyManagementPage() {
             <div className={styles.propRow}>
               <span className={styles.propLabel}>{t('proxy_management.latency')}:</span>
               <span className={styles.propValue}>
-                {status?.current_node?.latency_ms ? `${status.current_node.latency_ms} ms` : '—'}
+                {typeof status?.current_node?.latency_ms === 'number' && status.current_node.latency_ms > 0
+                  ? `${status.current_node.latency_ms} ms`
+                  : '—'}
               </span>
             </div>
             <div className={styles.propRow}>
@@ -565,7 +567,7 @@ export function ProxyManagementPage() {
                       {t(`proxy_management.health_${n.health}`, { defaultValue: n.health })}
                     </span>
                   </td>
-                  <td>{n.latency_ms > 0 ? `${n.latency_ms} ms` : '—'}</td>
+                  <td>{typeof n.latency_ms === 'number' && n.latency_ms > 0 ? `${n.latency_ms} ms` : '—'}</td>
                   <td>{n.preferred_level ?? 0}</td>
                   <td>{n.consecutive_failures}</td>
                   <td>
@@ -586,7 +588,7 @@ export function ProxyManagementPage() {
               {filteredNodes.length === 0 && (
                 <tr>
                   <td colSpan={8} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-tertiary)' }}>
-                    暂无符合条件的候选节点
+                    {t('proxy_management.no_nodes_found', { defaultValue: '暂无符合条件的候选节点' })}
                   </td>
                 </tr>
               )}
@@ -868,7 +870,7 @@ export function ProxyManagementPage() {
           <div className={styles.modalSection}>
             <div><strong>国家/地区:</strong> {selectedNodeForSwitch?.country} / {selectedNodeForSwitch?.region}</div>
             <div><strong>当前健康:</strong> {selectedNodeForSwitch?.health}</div>
-            <div><strong>延迟:</strong> {selectedNodeForSwitch?.latency_ms} ms</div>
+            <div><strong>延迟:</strong> {typeof selectedNodeForSwitch?.latency_ms === 'number' && selectedNodeForSwitch.latency_ms > 0 ? `${selectedNodeForSwitch.latency_ms} ms` : '—'}</div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input
@@ -901,7 +903,10 @@ export function ProxyManagementPage() {
                 {dryRunResult.recommended_node.name} ({dryRunResult.recommended_node.id})
               </div>
               <div>
-                <strong>{t('proxy_management.latency')}:</strong> {dryRunResult.recommended_node.latency_ms} ms
+                <strong>{t('proxy_management.latency')}:</strong>{' '}
+                {typeof dryRunResult.recommended_node.latency_ms === 'number' && dryRunResult.recommended_node.latency_ms > 0
+                  ? `${dryRunResult.recommended_node.latency_ms} ms`
+                  : '—'}
               </div>
               <div>
                 <strong>{t('proxy_management.would_switch_label')}:</strong>{' '}

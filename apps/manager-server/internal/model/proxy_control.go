@@ -38,6 +38,11 @@ const (
 	ErrCodeConfigurationMissing     = "configuration_missing"
 )
 
+// IntPtr returns a pointer to an int value.
+func IntPtr(v int) *int {
+	return &v
+}
+
 type ProxyStatus struct {
 	Enabled             bool               `json:"enabled"`
 	ReadOnly            bool               `json:"read_only"`
@@ -54,7 +59,7 @@ type ProxyNode struct {
 	Country               string `json:"country"`
 	Region                string `json:"region"`
 	Health                string `json:"health"` // healthy, degraded, checking, failed, unknown, switching, rollback
-	LatencyMS             int    `json:"latency_ms"`
+	LatencyMS             *int   `json:"latency_ms"`
 	Selected              bool   `json:"selected"`
 	PreferredLevel        int    `json:"preferred_level,omitempty"`
 	ConsecutiveFailures   int    `json:"consecutive_failures"`

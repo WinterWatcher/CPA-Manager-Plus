@@ -200,8 +200,25 @@ func fromExisting(
 			authFileMutationCoordinator,
 			st,
 		),
-		ProxyControlService:      proxycontrolsvc.NewMockProxyControl(),
+		ProxyControlService:      buildProxyControl(cfg),
 		PanelService:             panelsvc.New(cfg.PanelPath, embeddedPanel),
 		AutomationRuntimeService: runtimeService,
+	}
+}
+
+func buildProxyControl(cfg config.Config) proxycontrolsvc.ProxyControl {
+	switch strings.ToLower(strings.TrimSpace(cfg.ProxyControl.Type)) {
+	case "skyvpn":
+		return proxycontrolsvc.NewSkyVPNProxyControl(proxycontrolsvc.SkyVPNConfig{
+			BaseURL:        cfg.ProxyControl.BaseURL,
+			Token:          cfg.ProxyControl.Token,
+			TimeoutSeconds: cfg.ProxyControl.TimeoutSeconds,
+			StateFile:      cfg.ProxyControl.StateFile,
+			DataKey:        cfg.DataKey,
+		})
+	case "mock":
+		return proxycontrolsvc.NewMockProxyControl()
+	default:
+		return proxycontrolsvc.NewUnavailableProxyControl()
 	}
 }

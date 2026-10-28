@@ -27,7 +27,7 @@ export interface ProxyNode {
   country: string;
   region: string;
   health: NodeHealth;
-  latency_ms: number;
+  latency_ms: number | null;
   selected: boolean;
   preferred_level?: number;
   consecutive_failures: number;

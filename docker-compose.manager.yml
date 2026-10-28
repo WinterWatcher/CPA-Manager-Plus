@@ -22,6 +22,13 @@ services:
       USAGE_POLL_INTERVAL_MS: "500"
       USAGE_QUERY_LIMIT: "50000"
       USAGE_CORS_ORIGINS: "*"
+      # Proxy Control (SkyVPN) configuration
+      # Connects to local SkyVPN controller when PROXY_CONTROLLER_TYPE=skyvpn
+      PROXY_CONTROLLER_TYPE: "${PROXY_CONTROLLER_TYPE:-skyvpn}"
+      PROXY_CONTROLLER_BASE_URL: "${PROXY_CONTROLLER_BASE_URL:-http://127.0.0.1:6756}"
+      PROXY_CONTROLLER_TOKEN_FILE: "${PROXY_CONTROLLER_TOKEN_FILE:-/run/secrets/skyvpn_controller_token}"
+      PROXY_CONTROLLER_TIMEOUT_SECONDS: "10"
+      PROXY_SELECTION_STATE_FILE: "/data/proxy-selection.json"
     volumes:
       - cpa-manager-plus-data:/data
     healthcheck:

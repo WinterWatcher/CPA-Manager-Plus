@@ -303,6 +303,7 @@
     "stage_status_pending": "等待中",
     "stage_status_skipped": "已跳过",
     "candidate_nodes_title": "候选节点列表",
+    "no_nodes_found": "暂无符合条件的候选节点",
     "col_name": "节点名称",
     "col_country": "国家/地区",
     "col_region": "区域",

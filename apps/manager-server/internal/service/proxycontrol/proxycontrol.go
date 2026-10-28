@@ -99,6 +99,13 @@ type MockProxyControl struct {
 	rollbackSnap map[string]string // rollbackID -> nodeID
 }
 
+func nodeLatency(n model.ProxyNode) int {
+	if n.LatencyMS == nil || *n.LatencyMS <= 0 {
+		return 999999
+	}
+	return *n.LatencyMS
+}
+
 func NewMockProxyControl() *MockProxyControl {
 	now := time.Now().UTC().Format(time.RFC3339)
 	nodes := []model.ProxyNode{
@@ -108,7 +115,7 @@ func NewMockProxyControl() *MockProxyControl {
 			Country:              "JP",
 			Region:               "Tokyo",
 			Health:               "healthy",
-			LatencyMS:            145,
+			LatencyMS:            model.IntPtr(145),
 			Selected:             false,
 			PreferredLevel:       1,
 			ConsecutiveSuccesses: 12,
@@ -121,7 +128,7 @@ func NewMockProxyControl() *MockProxyControl {
 			Country:              "JP",
 			Region:               "Tokyo",
 			Health:               "healthy",
-			LatencyMS:            182,
+			LatencyMS:            model.IntPtr(182),
 			Selected:             true,
 			PreferredLevel:       2,
 			ConsecutiveSuccesses: 15,
@@ -135,7 +142,7 @@ func NewMockProxyControl() *MockProxyControl {
 			Country:              "JP",
 			Region:               "Osaka",
 			Health:               "degraded",
-			LatencyMS:            320,
+			LatencyMS:            model.IntPtr(320),
 			Selected:             false,
 			PreferredLevel:       0,
 			ConsecutiveFailures:  1,
@@ -148,7 +155,7 @@ func NewMockProxyControl() *MockProxyControl {
 			Country:              "JP",
 			Region:               "Tokyo",
 			Health:               "failed",
-			LatencyMS:            0,
+			LatencyMS:            nil,
 			Selected:             false,
 			PreferredLevel:       0,
 			ConsecutiveFailures:  4,
@@ -162,7 +169,7 @@ func NewMockProxyControl() *MockProxyControl {
 			Country:              "SG",
 			Region:               "Singapore",
 			Health:               "healthy",
-			LatencyMS:            195,
+			LatencyMS:            model.IntPtr(195),
 			Selected:             false,
 			PreferredLevel:       0,
 			ConsecutiveSuccesses: 8,
@@ -250,13 +257,7 @@ func (m *MockProxyControl) Nodes(ctx context.Context, filter model.NodeFilter) (
 	switch filter.Sort {
 	case "latency":
 		sort.Slice(filtered, func(i, j int) bool {
-			if filtered[i].LatencyMS == 0 {
-				return false
-			}
-			if filtered[j].LatencyMS == 0 {
-				return true
-			}
-			return filtered[i].LatencyMS < filtered[j].LatencyMS
+			return nodeLatency(filtered[i]) < nodeLatency(filtered[j])
 		})
 	case "health":
 		sort.Slice(filtered, func(i, j int) bool {
@@ -279,7 +280,7 @@ func (m *MockProxyControl) Nodes(ctx context.Context, filter model.NodeFilter) (
 			if filtered[i].PreferredLevel != filtered[j].PreferredLevel {
 				return filtered[i].PreferredLevel > filtered[j].PreferredLevel
 			}
-			return filtered[i].LatencyMS < filtered[j].LatencyMS
+			return nodeLatency(filtered[i]) < nodeLatency(filtered[j])
 		})
 	}
 
@@ -368,7 +369,7 @@ func (m *MockProxyControl) HealthCheck(ctx context.Context, req model.HealthChec
 	res := model.HealthCheckResult{
 		NodeID:    targetNode.ID,
 		Healthy:   healthy,
-		LatencyMS: targetNode.LatencyMS,
+		LatencyMS: nodeLatency(*targetNode),
 		Stages:    stages,
 		CheckedAt: now,
 		ErrorCode: errCode,
@@ -400,7 +401,7 @@ func (m *MockProxyControl) DryRunSelect(ctx context.Context, req model.SelectReq
 	for i := range m.nodes {
 		n := &m.nodes[i]
 		if n.Health == "healthy" && n.Switchable {
-			if recommended == nil || (n.LatencyMS > 0 && n.LatencyMS < recommended.LatencyMS) {
+			if recommended == nil || (nodeLatency(*n) > 0 && nodeLatency(*n) < nodeLatency(*recommended)) {
 				recommended = n
 			}
 		}
@@ -640,7 +641,7 @@ func NewConfiguredProxyControl(available bool) *ConfiguredProxyControl {
 			Country:   "UN",
 			Region:    "Global",
 			Health:    "healthy",
-			LatencyMS: 0,
+			LatencyMS: nil,
 			Selected:  true,
 		},
 		Egress: &model.EgressStatus{

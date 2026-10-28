@@ -380,4 +380,59 @@ describe('ProxyManagementPage UI', () => {
     expect(proxyControlApi.updatePolicy).toHaveBeenCalled();
     expect(showNotification).toHaveBeenCalledWith('proxy_management.policy_saved', 'success');
   });
+
+  it('renders real unknown nodes with null latency as dash and leaks no tokens', async () => {
+    vi.mocked(proxyControlApi.getNodes).mockResolvedValueOnce({
+      items: [
+        {
+          id: 'node-a1b2c3d4e5f6',
+          name: '[JP] Tokyo Residential 01',
+          country: 'JP',
+          region: 'Tokyo',
+          health: 'unknown',
+          latency_ms: null,
+          selected: true,
+          consecutive_failures: 0,
+          consecutive_successes: 0,
+          switchable: true,
+        },
+      ],
+      total: 1,
+      healthy: 0,
+      degraded: 0,
+      failed: 0,
+      last_refresh_at: '2026-10-28T12:00:00Z',
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ProxyManagementPage />);
+    });
+
+    const rootText = getText(renderer.root);
+    expect(rootText).toContain('[JP] Tokyo Residential 01');
+    expect(rootText).toContain('—'); // Dash for null latency
+    // Ensure no raw secrets leaked
+    expect(rootText).not.toContain('Bearer');
+    expect(rootText).not.toContain('vmess://');
+  });
+
+  it('renders empty table cleanly when no nodes are returned', async () => {
+    vi.mocked(proxyControlApi.getNodes).mockResolvedValueOnce({
+      items: [],
+      total: 0,
+      healthy: 0,
+      degraded: 0,
+      failed: 0,
+      last_refresh_at: null,
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ProxyManagementPage />);
+    });
+
+    const rootText = getText(renderer.root);
+    expect(rootText).toContain('暂无符合条件的候选节点');
+  });
 });

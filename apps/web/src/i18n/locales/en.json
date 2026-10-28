@@ -305,6 +305,7 @@
     "stage_status_pending": "Pending",
     "stage_status_skipped": "Skipped",
     "candidate_nodes_title": "Candidate Nodes",
+    "no_nodes_found": "No matching candidate nodes found",
     "col_name": "Node Name",
     "col_country": "Country / Region",
     "col_region": "Region",

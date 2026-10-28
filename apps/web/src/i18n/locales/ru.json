@@ -309,6 +309,7 @@
     "stage_status_pending": "Ожидание",
     "stage_status_skipped": "Пропущен",
     "candidate_nodes_title": "Кандидаты узлов",
+    "no_nodes_found": "Подходящие узлы не найдены",
     "col_name": "Имя узла",
     "col_country": "Страна / Регион",
     "col_region": "Регион",
