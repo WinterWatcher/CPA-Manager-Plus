@@ -25,6 +25,7 @@ import (
 	monitoringsvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/monitoring"
 	panelsvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/panel"
 	proxysvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/proxy"
+	proxycontrolsvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/proxycontrol"
 	quotasnapshotsvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/quotasnapshot"
 	setupsvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/setup"
 	updatechecksvc "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/service/updatecheck"
@@ -70,6 +71,7 @@ type Context struct {
 	AuthFileMutationCoordinator    *cpaauthfiles.MutationCoordinator
 	QuotaCooldownRecoveryService   QuotaCooldownRecoveryService
 	ProxyService                   *proxysvc.Service
+	ProxyControlService            proxycontrolsvc.ProxyControl
 	PanelService                   *panelsvc.Service
 	AutomationRuntimeService       AutomationRuntimeService
 	DatabaseMaintenance            DatabaseMaintenanceStatusProvider
@@ -198,6 +200,7 @@ func fromExisting(
 			authFileMutationCoordinator,
 			st,
 		),
+		ProxyControlService:      proxycontrolsvc.NewMockProxyControl(),
 		PanelService:             panelsvc.New(cfg.PanelPath, embeddedPanel),
 		AutomationRuntimeService: runtimeService,
 	}
