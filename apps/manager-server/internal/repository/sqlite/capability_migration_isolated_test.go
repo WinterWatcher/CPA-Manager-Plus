@@ -353,10 +353,8 @@ func TestIsolatedDatabaseMigrationAndCapabilityRollup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query model stats with filter: %v", err)
 	}
-	t.Logf("total aggregated stats returned: %d", len(stats))
 	statByModel := map[string]usageeventrepo.ModelStat{}
 	for _, s := range stats {
-		t.Logf("found aggregated model: %q, calls: %d", s.Model, s.Calls)
 		statByModel[s.Model] = s
 	}
 

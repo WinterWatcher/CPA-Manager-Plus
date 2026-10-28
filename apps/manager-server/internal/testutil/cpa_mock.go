@@ -25,6 +25,7 @@ type CPAMock struct {
 	UsageStatisticsEnabled bool
 	RetentionSeconds       int
 	ProxyURL               string
+	QueueItems             []string
 
 	mu       sync.Mutex
 	requests []ObservedRequest
@@ -39,6 +40,12 @@ func NewCPAMock(t testing.TB) *CPAMock {
 	mock.server = httptest.NewServer(http.HandlerFunc(mock.ServeHTTP))
 	t.Cleanup(mock.Close)
 	return mock
+}
+
+func (m *CPAMock) EnqueueUsageItem(item string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.QueueItems = append(m.QueueItems, item)
 }
 
 func (m *CPAMock) URL() string {
@@ -117,7 +124,15 @@ func (m *CPAMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		writeJSON(w, []string{})
+		m.mu.Lock()
+		items := m.QueueItems
+		m.QueueItems = nil
+		m.mu.Unlock()
+		rawItems := make([]json.RawMessage, len(items))
+		for i, item := range items {
+			rawItems[i] = json.RawMessage(item)
+		}
+		writeJSON(w, rawItems)
 	case strings.HasPrefix(r.URL.Path, "/v0/management/"):
 		if !m.hasManagementAuth(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
