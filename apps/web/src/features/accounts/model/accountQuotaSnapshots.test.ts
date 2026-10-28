@@ -3387,5 +3387,64 @@ describe('account quota snapshots', () => {
       expect(merged[0].remainingPercent).toBe(85);
       expect(merged[0].usedPercent).toBe(15);
     });
+
+    it('preserves both 5h and weekly windows for the same provider/scope without collision', () => {
+      const fiveHourSnapshot = makeSnapshot({
+        provider_window_id: 'claude-window',
+        window_kind: 'five_hour',
+        duration_seconds: 18_000,
+        window_mode: 'fixed',
+        remaining_percent: 70,
+        used_percent: 30,
+        observed_at_ms: 15_000,
+      });
+
+      const weeklySnapshot = makeSnapshot({
+        provider_window_id: 'claude-window',
+        window_kind: 'weekly',
+        duration_seconds: 604_800,
+        window_mode: 'fixed',
+        remaining_percent: 40,
+        used_percent: 60,
+        observed_at_ms: 15_000,
+      });
+
+      // Live definitions have both 5h and weekly
+      const fiveHourDef = makeDefinition({
+        key: 'claude:5h',
+        providerWindowId: 'claude-window',
+        kind: 'five_hour',
+        durationSeconds: 18_000,
+        windowMode: 'fixed',
+        provider: 'claude',
+        usedPercent: 20,
+        remainingPercent: 80,
+      });
+
+      const weeklyDef = makeDefinition({
+        key: 'claude:weekly',
+        providerWindowId: 'claude-window',
+        kind: 'weekly',
+        durationSeconds: 604_800,
+        windowMode: 'fixed',
+        provider: 'claude',
+        usedPercent: 50,
+        remainingPercent: 50,
+      });
+
+      const merged = mergeAccountQuotaSnapshotWindows(
+        [fiveHourDef, weeklyDef],
+        [fiveHourSnapshot, weeklySnapshot],
+        { provider: 'claude' }
+      );
+
+      expect(merged).toHaveLength(2);
+      const m5h = merged.find((w) => w.durationSeconds === 18_000);
+      const mWeekly = merged.find((w) => w.durationSeconds === 604_800);
+      expect(m5h).toBeDefined();
+      expect(mWeekly).toBeDefined();
+      expect(m5h?.remainingPercent).toBe(70);
+      expect(mWeekly?.remainingPercent).toBe(40);
+    });
   });
 });

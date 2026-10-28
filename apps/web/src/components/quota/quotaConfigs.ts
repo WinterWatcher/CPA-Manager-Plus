@@ -1,17 +1,22 @@
 import type { TFunction } from 'i18next';
 import type {
+  AntigravityQuotaGroup,
   AntigravityQuotaState,
   AuthFileItem,
   ClaudeQuotaState,
+  ClaudeQuotaWindow,
   CodexQuotaState,
   CodexQuotaWindow,
   CodexRateLimitResetCredit,
   CredentialScopedQuotaState,
   DevinQuotaData,
   DevinQuotaState,
+  DevinQuotaWindow,
+  KimiQuotaRow,
   KimiQuotaState,
   MetaQuotaData,
   MetaQuotaState,
+  MetaQuotaWindow,
   XaiBillingSummary,
   XaiQuotaState,
 } from '@/types';
@@ -620,6 +625,103 @@ export const getSortedCodexResetCreditExpiries = (
     .filter((credit): credit is CodexResetCreditExpiryInfo => Boolean(credit))
     .sort((left, right) => left.expiresAtMs - right.expiresAtMs || left.id.localeCompare(right.id));
 
+export function mergeClaudeQuotaWindows(
+  previousWindows: ClaudeQuotaWindow[] | undefined,
+  incomingWindows: ClaudeQuotaWindow[]
+): { windows: ClaudeQuotaWindow[]; retainedCount: number } {
+  if (!previousWindows || previousWindows.length === 0) {
+    return { windows: incomingWindows, retainedCount: 0 };
+  }
+  const incomingIds = new Set(incomingWindows.map((w) => w.id));
+  const retainedWindows = previousWindows.filter((w) => !incomingIds.has(w.id));
+  return {
+    windows: [...incomingWindows, ...retainedWindows],
+    retainedCount: retainedWindows.length,
+  };
+}
+
+export function mergeAntigravityQuotaGroups(
+  previousGroups: AntigravityQuotaGroup[] | undefined,
+  incomingGroups: AntigravityQuotaGroup[]
+): { groups: AntigravityQuotaGroup[]; retainedCount: number } {
+  if (!previousGroups || previousGroups.length === 0) {
+    return { groups: incomingGroups, retainedCount: 0 };
+  }
+  const incomingById = new Map(incomingGroups.map((g) => [g.id, g]));
+  let retainedCount = 0;
+  const merged: AntigravityQuotaGroup[] = [];
+
+  for (const group of incomingGroups) {
+    const prev = previousGroups.find((p) => p.id === group.id);
+    if (!prev) {
+      merged.push(group);
+      continue;
+    }
+    const incomingBucketIds = new Set(group.buckets.map((b) => b.id));
+    const retainedBuckets = prev.buckets.filter((b) => !incomingBucketIds.has(b.id));
+    retainedCount += retainedBuckets.length;
+    merged.push({
+      ...prev,
+      ...group,
+      buckets: [...group.buckets, ...retainedBuckets],
+    });
+  }
+
+  for (const prev of previousGroups) {
+    if (!incomingById.has(prev.id)) {
+      merged.push(prev);
+      retainedCount += prev.buckets.length;
+    }
+  }
+
+  return { groups: merged, retainedCount };
+}
+
+export function mergeKimiQuotaRows(
+  previousRows: KimiQuotaRow[] | undefined,
+  incomingRows: KimiQuotaRow[]
+): { rows: KimiQuotaRow[]; retainedCount: number } {
+  if (!previousRows || previousRows.length === 0) {
+    return { rows: incomingRows, retainedCount: 0 };
+  }
+  const incomingIds = new Set(incomingRows.map((r) => r.id));
+  const retainedRows = previousRows.filter((r) => !incomingIds.has(r.id));
+  return {
+    rows: [...incomingRows, ...retainedRows],
+    retainedCount: retainedRows.length,
+  };
+}
+
+export function mergeMetaQuotaWindows(
+  previousWindows: MetaQuotaWindow[] | undefined,
+  incomingWindows: MetaQuotaWindow[]
+): { windows: MetaQuotaWindow[]; retainedCount: number } {
+  if (!previousWindows || previousWindows.length === 0) {
+    return { windows: incomingWindows, retainedCount: 0 };
+  }
+  const incomingIds = new Set(incomingWindows.map((w) => w.id));
+  const retainedWindows = previousWindows.filter((w) => !incomingIds.has(w.id));
+  return {
+    windows: [...incomingWindows, ...retainedWindows],
+    retainedCount: retainedWindows.length,
+  };
+}
+
+export function mergeDevinQuotaWindows(
+  previousWindows: DevinQuotaWindow[] | undefined,
+  incomingWindows: DevinQuotaWindow[]
+): { windows: DevinQuotaWindow[]; retainedCount: number } {
+  if (!previousWindows || previousWindows.length === 0) {
+    return { windows: incomingWindows, retainedCount: 0 };
+  }
+  const incomingIds = new Set(incomingWindows.map((w) => w.id));
+  const retainedWindows = previousWindows.filter((w) => !incomingIds.has(w.id));
+  return {
+    windows: [...incomingWindows, ...retainedWindows],
+    retainedCount: retainedWindows.length,
+  };
+}
+
 export const CLAUDE_CONFIG: QuotaConfig<ClaudeQuotaState, ClaudeQuotaData> = {
   type: 'claude',
   i18nPrefix: 'claude_quota',
@@ -630,15 +732,21 @@ export const CLAUDE_CONFIG: QuotaConfig<ClaudeQuotaState, ClaudeQuotaData> = {
     windows: [],
     ...buildQuotaCredentialIdentity(file),
   }),
-  buildSuccessState: (data, file) => ({
-    status: 'success',
-    windows: data.windows,
-    quotaInventoryObserved: data.quotaInventoryObserved,
-    extraUsage: data.extraUsage,
-    planType: data.planType,
-    ...buildQuotaCredentialIdentity(file),
-    fetchedAtMs: Date.now(),
-  }),
+  buildSuccessState: (data, file, currentState) => {
+    const previous = (file ? scopeCredentialQuotaState(file, currentState) : undefined) ?? currentState;
+    const { windows, retainedCount } = mergeClaudeQuotaWindows(previous?.windows, data.windows);
+    const quotaInventoryObserved =
+      retainedCount > 0 ? false : (data.quotaInventoryObserved ?? true);
+    return {
+      status: 'success',
+      windows,
+      quotaInventoryObserved,
+      extraUsage: data.extraUsage ?? previous?.extraUsage ?? null,
+      planType: data.planType ?? previous?.planType ?? null,
+      ...buildQuotaCredentialIdentity(file),
+      fetchedAtMs: Date.now(),
+    };
+  },
   buildErrorState: (message, status, file) => ({
     status: 'error',
     windows: [],
@@ -662,15 +770,21 @@ export const ANTIGRAVITY_CONFIG: QuotaConfig<AntigravityQuotaState, AntigravityQ
     serverTimeOffsetMs: null,
     ...buildQuotaCredentialIdentity(file),
   }),
-  buildSuccessState: (data, file) => ({
-    status: 'success',
-    groups: data.groups,
-    quotaInventoryObserved: data.quotaInventoryObserved,
-    subscription: data.subscription ?? null,
-    serverTimeOffsetMs: data.serverTimeOffsetMs,
-    ...buildQuotaCredentialIdentity(file),
-    fetchedAtMs: Date.now(),
-  }),
+  buildSuccessState: (data, file, currentState) => {
+    const previous = (file ? scopeCredentialQuotaState(file, currentState) : undefined) ?? currentState;
+    const { groups, retainedCount } = mergeAntigravityQuotaGroups(previous?.groups, data.groups);
+    const quotaInventoryObserved =
+      retainedCount > 0 ? false : (data.quotaInventoryObserved ?? true);
+    return {
+      status: 'success',
+      groups,
+      quotaInventoryObserved,
+      subscription: data.subscription ?? previous?.subscription ?? null,
+      serverTimeOffsetMs: data.serverTimeOffsetMs ?? previous?.serverTimeOffsetMs ?? null,
+      ...buildQuotaCredentialIdentity(file),
+      fetchedAtMs: Date.now(),
+    };
+  },
   buildErrorState: (message, status, file) => ({
     status: 'error',
     groups: [],
@@ -695,7 +809,13 @@ export const CODEX_CONFIG: QuotaConfig<CodexQuotaState, CodexQuotaData> = {
     ...buildQuotaCredentialIdentity(file),
   }),
   buildSuccessState: (data, file, currentState) => {
-    const resetEvidence = mergeCodexResetCreditsEvidence(currentState, {
+    const previous = (file ? scopeCredentialQuotaState(file, currentState) : undefined) ?? currentState;
+    const mergedWindows = mergeCodexQuotaWindows(previous?.windows, data.windows) ?? data.windows;
+    const hasRetained = Boolean(
+      previous?.windows?.some((pw) => !data.windows.some((dw) => dw.id === pw.id))
+    );
+    const quotaInventoryObserved = hasRetained ? false : (data.quotaInventoryObserved ?? true);
+    const resetEvidence = mergeCodexResetCreditsEvidence(previous, {
       ...data,
       // CODEX_CONFIG is the full refresh. An explicit dedicated count-only
       // response is authoritative; an actual endpoint failure is already
@@ -705,8 +825,8 @@ export const CODEX_CONFIG: QuotaConfig<CodexQuotaState, CodexQuotaData> = {
     });
     return {
       status: 'success',
-      windows: data.windows,
-      quotaInventoryObserved: data.quotaInventoryObserved,
+      windows: mergedWindows,
+      quotaInventoryObserved,
       planType: data.planType,
       subscriptionActiveUntil: data.subscriptionActiveUntil,
       creditsHasCredits: data.creditsHasCredits,
@@ -749,13 +869,19 @@ export const CODEX_SUMMARY_CONFIG: QuotaConfig<CodexQuotaState, CodexQuotaData> 
   ...CODEX_CONFIG,
   fetchQuota: fetchCodexQuotaSummary,
   buildSuccessState: (data, file, currentState) => {
-    const resetEvidence = mergeCodexResetCreditsEvidence(currentState, data, {
+    const previous = (file ? scopeCredentialQuotaState(file, currentState) : undefined) ?? currentState;
+    const mergedWindows = mergeCodexQuotaWindows(previous?.windows, data.windows) ?? data.windows;
+    const hasRetained = Boolean(
+      previous?.windows?.some((pw) => !data.windows.some((dw) => dw.id === pw.id))
+    );
+    const quotaInventoryObserved = hasRetained ? false : (data.quotaInventoryObserved ?? true);
+    const resetEvidence = mergeCodexResetCreditsEvidence(previous, data, {
       isFullDetailObservation: false,
     });
     return {
       status: 'success',
-      windows: data.windows,
-      quotaInventoryObserved: data.quotaInventoryObserved,
+      windows: mergedWindows,
+      quotaInventoryObserved,
       planType: data.planType,
       subscriptionActiveUntil: data.subscriptionActiveUntil,
       creditsHasCredits: data.creditsHasCredits,
@@ -793,13 +919,19 @@ export const KIMI_CONFIG: QuotaConfig<KimiQuotaState, KimiQuotaData> = {
     rows: [],
     ...buildQuotaCredentialIdentity(file),
   }),
-  buildSuccessState: (data, file) => ({
-    status: 'success',
-    rows: data.rows,
-    quotaInventoryObserved: data.quotaInventoryObserved,
-    ...buildQuotaCredentialIdentity(file),
-    fetchedAtMs: Date.now(),
-  }),
+  buildSuccessState: (data, file, currentState) => {
+    const previous = (file ? scopeCredentialQuotaState(file, currentState) : undefined) ?? currentState;
+    const { rows, retainedCount } = mergeKimiQuotaRows(previous?.rows, data.rows);
+    const quotaInventoryObserved =
+      retainedCount > 0 ? false : (data.quotaInventoryObserved ?? true);
+    return {
+      status: 'success',
+      rows,
+      quotaInventoryObserved,
+      ...buildQuotaCredentialIdentity(file),
+      fetchedAtMs: Date.now(),
+    };
+  },
   buildErrorState: (message, status, file) => ({
     status: 'error',
     rows: [],
@@ -872,16 +1004,20 @@ export const DEVIN_CONFIG: QuotaConfig<DevinQuotaState, DevinQuotaData> = {
     planEndMs: null,
     ...buildQuotaCredentialIdentity(file),
   }),
-  buildSuccessState: (data, file) => ({
-    status: 'success',
-    windows: data.windows,
-    observedAtMs: data.observedAtMs,
-    plan: data.plan,
-    planStartMs: data.planStartMs,
-    planEndMs: data.planEndMs,
-    ...buildQuotaCredentialIdentity(file),
-    fetchedAtMs: data.observedAtMs ?? Date.now(),
-  }),
+  buildSuccessState: (data, file, currentState) => {
+    const previous = (file ? scopeCredentialQuotaState(file, currentState) : undefined) ?? currentState;
+    const { windows } = mergeDevinQuotaWindows(previous?.windows, data.windows);
+    return {
+      status: 'success',
+      windows,
+      observedAtMs: data.observedAtMs,
+      plan: data.plan ?? previous?.plan ?? null,
+      planStartMs: data.planStartMs ?? previous?.planStartMs ?? null,
+      planEndMs: data.planEndMs ?? previous?.planEndMs ?? null,
+      ...buildQuotaCredentialIdentity(file),
+      fetchedAtMs: data.observedAtMs ?? Date.now(),
+    };
+  },
   buildErrorState: (message, status, file) => ({
     status: 'error',
     windows: [],
@@ -911,16 +1047,22 @@ export const META_CONFIG: QuotaConfig<MetaQuotaState, MetaQuotaData> = {
     quotaInventoryObserved: false,
     ...buildQuotaCredentialIdentity(file),
   }),
-  buildSuccessState: (data, file) => ({
-    status: 'success',
-    windows: data.windows,
-    observedAtMs: data.observedAtMs,
-    plan: data.plan,
-    isSubscriptionActive: data.isSubscriptionActive,
-    quotaInventoryObserved: data.quotaInventoryObserved,
-    ...buildQuotaCredentialIdentity(file),
-    fetchedAtMs: data.observedAtMs ?? Date.now(),
-  }),
+  buildSuccessState: (data, file, currentState) => {
+    const previous = (file ? scopeCredentialQuotaState(file, currentState) : undefined) ?? currentState;
+    const { windows, retainedCount } = mergeMetaQuotaWindows(previous?.windows, data.windows);
+    const quotaInventoryObserved =
+      retainedCount > 0 ? false : (data.quotaInventoryObserved ?? true);
+    return {
+      status: 'success',
+      windows,
+      observedAtMs: data.observedAtMs,
+      plan: data.plan ?? previous?.plan ?? null,
+      isSubscriptionActive: data.isSubscriptionActive ?? previous?.isSubscriptionActive ?? null,
+      quotaInventoryObserved,
+      ...buildQuotaCredentialIdentity(file),
+      fetchedAtMs: data.observedAtMs ?? Date.now(),
+    };
+  },
   buildErrorState: (message, status, file) => ({
     status: 'error',
     windows: [],

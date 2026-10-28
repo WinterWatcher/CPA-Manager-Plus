@@ -621,35 +621,62 @@ const normalizedSnapshotModelIDs = (modelIDs: string[] | undefined): string[] =>
     new Set((modelIDs ?? []).map((model) => model.trim().toLowerCase()).filter(Boolean))
   ).sort();
 
-const snapshotScopeParts = (window: {
+interface SnapshotScopeKeyInput {
   provider_window_id: string;
+  model_scope_kind: string;
+  model_scope_key?: string;
+  model_ids?: string[];
+  window_kind?: string;
+  duration_seconds?: number | null;
+  window_mode?: string;
+}
+
+const snapshotModelScopeParts = (window: {
   model_scope_kind: string;
   model_scope_key?: string;
   model_ids?: string[];
 }) => {
   if (isIncompleteModelScopeSnapshot(window)) {
-    return [window.provider_window_id.trim(), 'models', ''];
+    return ['models', ''];
   }
   const kind = window.model_scope_kind.trim().toLowerCase();
   const key = window.model_scope_key?.trim().toLowerCase() ?? '';
   const models = normalizedSnapshotModelIDs(window.model_ids);
-  return [window.provider_window_id.trim(), kind, key, ...models];
+  return [kind, key, ...models];
 };
 
-const snapshotScopeKey = (window: {
+const snapshotScopeParts = (window: SnapshotScopeKeyInput) => {
+  const providerWindowId = window.provider_window_id.trim();
+  const windowKind = window.window_kind?.trim().toLowerCase() ?? '';
+  const duration =
+    typeof window.duration_seconds === 'number' && Number.isFinite(window.duration_seconds)
+      ? String(Math.round(window.duration_seconds))
+      : '';
+  const windowMode = window.window_mode?.trim().toLowerCase() ?? '';
+  return [providerWindowId, windowKind, duration, windowMode, ...snapshotModelScopeParts(window)];
+};
+
+const snapshotScopeKey = (window: SnapshotScopeKeyInput) => snapshotScopeParts(window).join('\u0000');
+
+const legacySnapshotScopeParts = (window: {
   provider_window_id: string;
   model_scope_kind: string;
   model_scope_key?: string;
   model_ids?: string[];
-}) => snapshotScopeParts(window).join('\u0000');
+}) => [window.provider_window_id.trim(), ...snapshotModelScopeParts(window)];
+
+const legacySnapshotScopeKey = (window: {
+  provider_window_id: string;
+  model_scope_kind: string;
+  model_scope_key?: string;
+  model_ids?: string[];
+}) => legacySnapshotScopeParts(window).join('\u0000');
 
 const snapshotDisplayKey = (snapshot: AccountQuotaSnapshotWindow): string =>
   [
     snapshot.provider_window_id,
     'scope',
-    ...snapshotScopeParts(snapshot)
-      .slice(1)
-      .map((part) => encodeURIComponent(part || '-')),
+    ...snapshotModelScopeParts(snapshot).map((part) => encodeURIComponent(part || '-')),
   ].join('::');
 
 const compareSnapshotFreshness = (
@@ -794,11 +821,17 @@ export const mergeAccountQuotaSnapshotWindows = (
     );
   });
   const snapshotsByKey = new Map<string, AccountQuotaSnapshotWindow>();
+  const legacySnapshotsByKey = new Map<string, AccountQuotaSnapshotWindow>();
   compatibleSnapshots.forEach((snapshot) => {
     const key = snapshotScopeKey(snapshot);
     const current = snapshotsByKey.get(key);
     if (!current || compareSnapshotFreshness(current, snapshot) < 0) {
       snapshotsByKey.set(key, snapshot);
+    }
+    const legacyKey = legacySnapshotScopeKey(snapshot);
+    const currentLegacy = legacySnapshotsByKey.get(legacyKey);
+    if (!currentLegacy || compareSnapshotFreshness(currentLegacy, snapshot) < 0) {
+      legacySnapshotsByKey.set(legacyKey, snapshot);
     }
   });
   const matchedSnapshotKeys = new Set<string>();
@@ -806,15 +839,27 @@ export const mergeAccountQuotaSnapshotWindows = (
     if (definition.modelScope.kind === 'all' && definition.modelScope.complete === false) {
       return definition;
     }
-    const key = snapshotScopeKey({
+    const defInput: SnapshotScopeKeyInput = {
       provider_window_id: definition.providerWindowId,
       model_scope_kind: definition.modelScope.kind,
       model_scope_key: definition.modelScope.key,
       model_ids: definition.modelScope.models,
-    });
-    const snapshot = snapshotsByKey.get(key);
+      window_kind: definition.kind,
+      duration_seconds: definition.durationSeconds,
+      window_mode: definition.windowMode,
+    };
+    const key = snapshotScopeKey(defInput);
+    let snapshot = snapshotsByKey.get(key);
+    let matchedKey = key;
+    if (!snapshot) {
+      const legacyKey = legacySnapshotScopeKey(defInput);
+      snapshot = legacySnapshotsByKey.get(legacyKey);
+      matchedKey = legacyKey;
+    }
     if (!snapshot) return definition;
-    matchedSnapshotKeys.add(key);
+    matchedSnapshotKeys.add(matchedKey);
+    matchedSnapshotKeys.add(snapshotScopeKey(snapshot));
+    matchedSnapshotKeys.add(legacySnapshotScopeKey(snapshot));
     const snapshotMetadataIsNewer =
       definition.observedAtMs === null ||
       !Number.isFinite(definition.observedAtMs) ||
@@ -938,9 +983,11 @@ export const mergeAccountQuotaSnapshotWindows = (
       },
     };
   });
-  const unmatchedSnapshots = Array.from(snapshotsByKey.entries())
-    .filter(([key]) => !matchedSnapshotKeys.has(key))
-    .map(([, snapshot]) => snapshot);
+  const unmatchedSnapshots = compatibleSnapshots.filter(
+    (snapshot) =>
+      !matchedSnapshotKeys.has(snapshotScopeKey(snapshot)) &&
+      !matchedSnapshotKeys.has(legacySnapshotScopeKey(snapshot))
+  );
   const appendedProviderCounts = new Map<string, number>();
   unmatchedSnapshots.forEach((snapshot) => {
     appendedProviderCounts.set(

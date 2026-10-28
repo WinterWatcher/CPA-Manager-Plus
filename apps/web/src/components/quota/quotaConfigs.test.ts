@@ -1691,5 +1691,97 @@ describe('DEVIN_CONFIG', () => {
       authFileKey: 'devin.json::d-1',
     });
   });
+
+  it('preserves existing Antigravity groups and buckets when refresh is partial', () => {
+    const file = { name: 'antigravity.json', type: 'antigravity' };
+    const currentState = ANTIGRAVITY_CONFIG.buildSuccessState(
+      {
+        groups: [
+          {
+            id: 'gemini-models',
+            label: 'Gemini Models',
+            buckets: [
+              { id: 'gemini-5h', label: '5H', window: '5h', remainingFraction: 0.9 },
+              { id: 'gemini-weekly', label: 'Weekly', window: 'weekly', remainingFraction: 0.8 },
+            ],
+          },
+          {
+            id: 'claude-models',
+            label: 'Claude Models',
+            buckets: [
+              { id: 'claude-5h', label: '5H', window: '5h', remainingFraction: 0.5 },
+              { id: 'claude-weekly', label: 'Weekly', window: 'weekly', remainingFraction: 0.4 },
+            ],
+          },
+        ],
+        quotaInventoryObserved: true,
+        subscription: null,
+        serverTimeOffsetMs: null,
+      },
+      file
+    );
+
+    // Partial refresh returns only gemini-models 5h bucket
+    const incomingData = {
+      groups: [
+        {
+          id: 'gemini-models',
+          label: 'Gemini Models',
+          buckets: [
+            { id: 'gemini-5h', label: '5H', window: '5h', remainingFraction: 0.7 },
+          ],
+        },
+      ],
+      quotaInventoryObserved: true,
+      subscription: null,
+      serverTimeOffsetMs: null,
+    };
+
+    const nextState = ANTIGRAVITY_CONFIG.buildSuccessState(incomingData, file, currentState);
+
+    // Both groups and all 4 buckets must be preserved
+    expect(nextState.groups).toHaveLength(2);
+    const gemini = nextState.groups.find((g) => g.id === 'gemini-models');
+    const claude = nextState.groups.find((g) => g.id === 'claude-models');
+    expect(gemini?.buckets).toHaveLength(2);
+    expect(claude?.buckets).toHaveLength(2);
+    // Updated bucket gets new value
+    expect(gemini?.buckets.find((b) => b.id === 'gemini-5h')?.remainingFraction).toBe(0.7);
+    // Retained bucket keeps old value
+    expect(gemini?.buckets.find((b) => b.id === 'gemini-weekly')?.remainingFraction).toBe(0.8);
+    // Observation marked partial because items were retained
+    expect(nextState.quotaInventoryObserved).toBe(false);
+  });
+
+  it('preserves existing Claude windows when refresh is partial', () => {
+    const file = { name: 'claude.json', type: 'claude' };
+    const currentState = CLAUDE_CONFIG.buildSuccessState(
+      {
+        windows: [
+          { id: 'five-hour', label: '5-Hour', usedPercent: 20, resetLabel: '-' },
+          { id: 'seven-day', label: 'Weekly', usedPercent: 50, resetLabel: '-' },
+        ],
+        quotaInventoryObserved: true,
+        planType: 'pro',
+      },
+      file
+    );
+
+    // Refresh returns only five-hour window
+    const incomingData = {
+      windows: [
+        { id: 'five-hour', label: '5-Hour', usedPercent: 25, resetLabel: '-' },
+      ],
+      quotaInventoryObserved: true,
+      planType: 'pro',
+    };
+
+    const nextState = CLAUDE_CONFIG.buildSuccessState(incomingData, file, currentState);
+
+    expect(nextState.windows).toHaveLength(2);
+    expect(nextState.windows.find((w) => w.id === 'five-hour')?.usedPercent).toBe(25);
+    expect(nextState.windows.find((w) => w.id === 'seven-day')?.usedPercent).toBe(50);
+    expect(nextState.quotaInventoryObserved).toBe(false);
+  });
 });
 
