@@ -280,6 +280,7 @@
     "dry_run_label": "Dry-run 演練",
     "status_reason": "當前狀態原因",
     "btn_health_check": "立即檢測",
+    "btn_latency_check": "檢測延遲",
     "btn_dry_run": "推薦選擇 (Dry-run)",
     "btn_switch_node": "切換到此節點",
     "btn_rollback": "回滾到上一節點",

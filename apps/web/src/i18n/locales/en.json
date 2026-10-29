@@ -282,6 +282,7 @@
     "dry_run_label": "Dry-run",
     "status_reason": "Status Reason",
     "btn_health_check": "Run Health Check",
+    "btn_latency_check": "Check Latency",
     "btn_dry_run": "Recommend (Dry-run)",
     "btn_switch_node": "Switch to this Node",
     "btn_rollback": "Rollback to Previous",

@@ -27,6 +27,7 @@ export function ProxyManagementPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [checkingNodeId, setCheckingNodeId] = useState<string | null>(null);
 
   const [status, setStatus] = useState<ProxyStatus | null>(null);
   const [nodes, setNodes] = useState<ProxyNode[]>([]);
@@ -131,6 +132,41 @@ export function ProxyManagementPage() {
       setChecking(false);
     }
   }, [showNotification, status, t]);
+
+  const handleNodeLatencyCheck = useCallback(
+    async (node: ProxyNode) => {
+      if (checkingNodeId) return;
+      setCheckingNodeId(node.id);
+      try {
+        const res = await proxyControlApi.healthCheck({ dry_run: true, node_id: node.id });
+        setNodes((current) =>
+          current.map((item) =>
+            item.id === node.id
+              ? {
+                  ...item,
+                  health: res.healthy ? 'healthy' : 'failed',
+                  latency_ms: res.healthy ? res.latency_ms : null,
+                  last_checked_at: res.checked_at,
+                  reason: res.error_code,
+                  consecutive_failures: res.healthy ? 0 : item.consecutive_failures + 1,
+                  consecutive_successes: res.healthy ? item.consecutive_successes + 1 : 0,
+                }
+              : item
+          )
+        );
+        showNotification(
+          res.healthy ? `${node.name}: ${res.latency_ms} ms` : `${node.name}: ${res.error_code ?? '检测失败'}`,
+          res.healthy ? 'success' : 'warning'
+        );
+        proxyControlApi.getHistory().then((h) => setHistory(h.items)).catch(() => {});
+      } catch (err: unknown) {
+        showNotification(err instanceof Error ? err.message : String(err), 'error');
+      } finally {
+        setCheckingNodeId(null);
+      }
+    },
+    [checkingNodeId, showNotification]
+  );
 
   // Dry run select
   const handleDryRunSelect = useCallback(async () => {
@@ -571,6 +607,16 @@ export function ProxyManagementPage() {
                   <td>{n.preferred_level ?? 0}</td>
                   <td>{n.consecutive_failures}</td>
                   <td>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={checkingNodeId !== null || isReadOnly || !n.switchable}
+                      onClick={() => handleNodeLatencyCheck(n)}
+                    >
+                      {checkingNodeId === n.id
+                        ? <LoadingSpinner size={14} />
+                        : t('proxy_management.btn_latency_check', { defaultValue: '检测延时' })}
+                    </Button>
                     <Button
                       size="sm"
                       variant="secondary"
