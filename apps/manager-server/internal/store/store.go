@@ -373,6 +373,48 @@ func (s *Store) ListPriceFrozenModels(ctx context.Context) ([]model.ModelPriceFr
 	return s.ModelPrices.ListFrozenModels(ctx)
 }
 
+func (s *Store) SavePricePolicy(ctx context.Context, policy model.ModelPricePolicy) (int64, error) {
+	s.modelPricesMu.Lock()
+	defer s.modelPricesMu.Unlock()
+	return s.ModelPrices.SavePolicy(ctx, policy)
+}
+
+func (s *Store) GetPricePolicyByID(ctx context.Context, id int64) (*model.ModelPricePolicy, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.GetPolicyByID(ctx, id)
+}
+
+func (s *Store) GetPricePolicyByVersion(ctx context.Context, version string) (*model.ModelPricePolicy, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.GetPolicyByVersion(ctx, version)
+}
+
+func (s *Store) GetActivePricePolicy(ctx context.Context, provider, model string) (*model.ModelPricePolicy, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.GetActivePolicy(ctx, provider, model)
+}
+
+func (s *Store) ListPricePolicies(ctx context.Context, filter modelprice.PolicyFilter) ([]model.ModelPricePolicy, int64, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.ListPolicies(ctx, filter)
+}
+
+func (s *Store) UpdatePricePolicyStatus(ctx context.Context, id int64, status string, revokedBy, reason string, revokedAtMS int64) error {
+	s.modelPricesMu.Lock()
+	defer s.modelPricesMu.Unlock()
+	return s.ModelPrices.UpdatePolicyStatus(ctx, id, status, revokedBy, reason, revokedAtMS)
+}
+
+func (s *Store) GetPreviousApprovedPricePolicy(ctx context.Context, provider, model string, beforeID int64) (*model.ModelPricePolicy, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.GetPreviousApprovedPolicy(ctx, provider, model, beforeID)
+}
+
 // WithModelPriceSnapshot prevents model-price mutations while a service reads
 // usage bands and applies the corresponding price book across multiple queries.
 func (s *Store) WithModelPriceSnapshot(read func() error) error {

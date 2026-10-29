@@ -166,6 +166,15 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 			"total":  total,
 		})
 
+	case path == "/v0/management/model-prices/policies" && r.Method == http.MethodGet:
+		h.handleListPolicies(w, r)
+
+	case path == "/v0/management/model-prices/policies/export" && r.Method == http.MethodPost:
+		h.handleExportPolicy(w, r)
+
+	case strings.HasPrefix(path, "/v0/management/model-prices/policies/"):
+		h.handlePolicyAction(w, r, path)
+
 	default:
 		response.MethodNotAllowed(w)
 	}
@@ -244,6 +253,114 @@ func (h *Handler) handleCandidateAction(w http.ResponseWriter, r *http.Request, 
 				return
 			}
 			response.JSON(w, http.StatusOK, rejected)
+			return
+		}
+	}
+
+	response.MethodNotAllowed(w)
+}
+
+type exportPolicyRequest struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+func (h *Handler) handleListPolicies(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	filter := modelpricerepo.PolicyFilter{
+		Provider: q.Get("provider"),
+		Model:    q.Get("model"),
+		Status:   q.Get("status"),
+		Version:  q.Get("version"),
+		Limit:    limit,
+		Offset:   offset,
+	}
+	policies, total, err := h.App.ModelPriceService.ListApprovedPolicySnapshots(r.Context(), filter)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]any{
+		"policies": policies,
+		"total":    total,
+	})
+}
+
+func (h *Handler) handleExportPolicy(w http.ResponseWriter, r *http.Request) {
+	var req exportPolicyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	snap, err := h.App.ModelPriceService.ExportApprovedPolicySnapshot(r.Context(), req.Provider, req.Model, "admin")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]any{
+		"success":  true,
+		"snapshot": snap,
+	})
+}
+
+func (h *Handler) handlePolicyAction(w http.ResponseWriter, r *http.Request, path string) {
+	sub := strings.TrimPrefix(path, "/v0/management/model-prices/policies/")
+	parts := strings.Split(sub, "/")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, errors.New("invalid policy id"))
+		return
+	}
+
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		policy, snap, err := h.App.ModelPriceService.GetPolicySnapshot(r.Context(), id)
+		if err != nil {
+			response.Error(w, http.StatusNotFound, err)
+			return
+		}
+		response.JSON(w, http.StatusOK, map[string]any{
+			"policy":   policy,
+			"snapshot": snap,
+		})
+		return
+	}
+
+	if len(parts) == 2 {
+		action := parts[1]
+		switch {
+		case action == "export" && r.Method == http.MethodGet:
+			_, snap, err := h.App.ModelPriceService.GetPolicySnapshot(r.Context(), id)
+			if err != nil {
+				response.Error(w, http.StatusNotFound, err)
+				return
+			}
+			response.JSON(w, http.StatusOK, snap)
+			return
+
+		case action == "revoke" && r.Method == http.MethodPost:
+			var req reviewActionRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			if err := h.App.ModelPriceService.RevokePolicySnapshot(r.Context(), id, "admin", req.Reason); err != nil {
+				response.Error(w, http.StatusBadRequest, err)
+				return
+			}
+			response.JSON(w, http.StatusOK, map[string]any{"success": true})
+			return
+
+		case action == "rollback" && r.Method == http.MethodPost:
+			var req reviewActionRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			snap, err := h.App.ModelPriceService.RollbackPolicySnapshot(r.Context(), id, "admin", req.Reason)
+			if err != nil {
+				response.Error(w, http.StatusBadRequest, err)
+				return
+			}
+			response.JSON(w, http.StatusOK, map[string]any{
+				"success":  true,
+				"snapshot": snap,
+			})
 			return
 		}
 	}

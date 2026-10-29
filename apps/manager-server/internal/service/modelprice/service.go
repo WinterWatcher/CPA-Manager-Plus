@@ -762,6 +762,319 @@ func (s *Service) ListFrozenModels(ctx context.Context) ([]model.ModelPriceFreez
 	return s.store.ListPriceFrozenModels(ctx)
 }
 
+func policyToSnapshot(p *model.ModelPricePolicy) *PolicySnapshot {
+	return &PolicySnapshot{
+		SchemaVersion:            "cost-policy/v1",
+		PolicyVersion:            p.PolicyVersion,
+		Provider:                 p.Provider,
+		PublicModel:              p.Model,
+		UpstreamModelHash:        p.UpstreamModelHash,
+		PriceStatus:              p.PriceStatus,
+		BillingUnit:              p.BillingUnit,
+		PromptPer1M:              p.PromptPer1M,
+		CompletionPer1M:          p.CompletionPer1M,
+		CachePer1M:               p.CachePer1M,
+		CacheReadPer1M:           p.CacheReadPer1M,
+		CacheCreationPer1M:       p.CacheCreationPer1M,
+		UnitPrice:                p.UnitPrice,
+		MaxRequestCostUSD:        p.MaxRequestCostUSD,
+		ProviderDailyBudgetUSD:   p.ProviderDailyBudgetUSD,
+		ProviderMonthlyBudgetUSD: p.ProviderMonthlyBudgetUSD,
+		GlobalDailyBudgetUSD:     p.GlobalDailyBudgetUSD,
+		GlobalMonthlyBudgetUSD:   p.GlobalMonthlyBudgetUSD,
+		EffectiveAtMS:            p.EffectiveAtMS,
+		ExpiresAtMS:              p.ExpiresAtMS,
+		Source:                   p.Source,
+		ContentHash:              p.ContentHash,
+		Signature:                p.Signature,
+	}
+}
+
+func (s *Service) ExportApprovedPolicySnapshot(ctx context.Context, provider, modelName, operator string) (*PolicySnapshot, error) {
+	if strings.TrimSpace(provider) == "" {
+		return nil, errors.New("provider is required")
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return nil, errors.New("model name is required")
+	}
+
+	freezeStatus, err := s.store.GetPriceFreezeStatus(ctx, provider, modelName)
+	if err != nil {
+		return nil, err
+	}
+	if freezeStatus != nil && freezeStatus.IsFrozen {
+		return nil, fmt.Errorf("cannot export policy: model %s under provider %s is frozen", modelName, provider)
+	}
+
+	candidates, _, err := s.store.ListPriceCandidates(ctx, modelpricerepo.CandidateFilter{
+		Provider: provider,
+		Model:    modelName,
+		Status:   model.CandidateStatusBlocked,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) > 0 {
+		return nil, fmt.Errorf("cannot export policy: model %s has unreviewed blocked candidate", modelName)
+	}
+
+	prices, err := s.store.LoadModelPrices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	activePrice, exists := prices[modelName]
+	if !exists {
+		return nil, fmt.Errorf("cannot export policy: model %s has no active price", modelName)
+	}
+
+	priceStatus := "paid_confirmed"
+	if activePrice.Prompt == 0 && activePrice.Completion == 0 && activePrice.Cache == 0 &&
+		activePrice.CacheRead == 0 && activePrice.CacheCreation == 0 && activePrice.UnitPrice == 0 {
+		priceStatus = "free_confirmed"
+	}
+	billingUnit := activePrice.BillingUnit
+	if strings.TrimSpace(billingUnit) == "" {
+		billingUnit = "tokens"
+	}
+
+	_, total, err := s.store.ListPricePolicies(ctx, modelpricerepo.PolicyFilter{
+		Provider: provider,
+		Model:    modelName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	activePolicy, err := s.store.GetActivePricePolicy(ctx, provider, modelName)
+	if err != nil {
+		return nil, err
+	}
+
+	upstreamHash := activePrice.SourceModelID
+	if upstreamHash == "" {
+		upstreamHash = fmt.Sprintf("upstream-%s-%s", provider, modelName)
+	}
+
+	nowMS := time.Now().UnixMilli()
+	revision := total + 1
+	policyVersion := fmt.Sprintf("cpamp-%s-%s-r%d", provider, modelName, revision)
+
+	draft := &PolicySnapshot{
+		SchemaVersion:            "cost-policy/v1",
+		PolicyVersion:            policyVersion,
+		Provider:                 provider,
+		PublicModel:              modelName,
+		UpstreamModelHash:        upstreamHash,
+		PriceStatus:              priceStatus,
+		BillingUnit:              billingUnit,
+		PromptPer1M:              activePrice.Prompt,
+		CompletionPer1M:          activePrice.Completion,
+		CachePer1M:               activePrice.Cache,
+		CacheReadPer1M:           activePrice.CacheRead,
+		CacheCreationPer1M:       activePrice.CacheCreation,
+		UnitPrice:                activePrice.UnitPrice,
+		MaxRequestCostUSD:        10.0,
+		ProviderDailyBudgetUSD:   100.0,
+		ProviderMonthlyBudgetUSD: 2000.0,
+		GlobalDailyBudgetUSD:     500.0,
+		GlobalMonthlyBudgetUSD:   10000.0,
+		EffectiveAtMS:            nowMS,
+		ExpiresAtMS:              0,
+		Source:                   "cpamp-approved",
+	}
+
+	if activePolicy != nil && activePolicy.Status == "active" {
+		if activePolicy.PromptPer1M == draft.PromptPer1M &&
+			activePolicy.CompletionPer1M == draft.CompletionPer1M &&
+			activePolicy.UnitPrice == draft.UnitPrice &&
+			activePolicy.BillingUnit == draft.BillingUnit &&
+			activePolicy.PriceStatus == draft.PriceStatus {
+			return policyToSnapshot(activePolicy), nil
+		}
+	}
+
+	draft.ContentHash = draft.ComputeContentHash()
+	if err := draft.Validate(); err != nil {
+		return nil, fmt.Errorf("policy validation failed: %w", err)
+	}
+
+	snapshots, _, _ := s.store.ListPriceSnapshots(ctx, provider, modelName, 1, 0)
+	var snapshotID int64
+	if len(snapshots) > 0 {
+		snapshotID = snapshots[0].ID
+	}
+
+	record := model.ModelPricePolicy{
+		SnapshotID:               snapshotID,
+		PolicyVersion:            draft.PolicyVersion,
+		Provider:                 draft.Provider,
+		Model:                    draft.PublicModel,
+		UpstreamModelHash:        draft.UpstreamModelHash,
+		PriceStatus:              draft.PriceStatus,
+		BillingUnit:              draft.BillingUnit,
+		PromptPer1M:              draft.PromptPer1M,
+		CompletionPer1M:          draft.CompletionPer1M,
+		CachePer1M:               draft.CachePer1M,
+		CacheReadPer1M:           draft.CacheReadPer1M,
+		CacheCreationPer1M:       draft.CacheCreationPer1M,
+		UnitPrice:                draft.UnitPrice,
+		MaxRequestCostUSD:        draft.MaxRequestCostUSD,
+		ProviderDailyBudgetUSD:   draft.ProviderDailyBudgetUSD,
+		ProviderMonthlyBudgetUSD: draft.ProviderMonthlyBudgetUSD,
+		GlobalDailyBudgetUSD:     draft.GlobalDailyBudgetUSD,
+		GlobalMonthlyBudgetUSD:   draft.GlobalMonthlyBudgetUSD,
+		EffectiveAtMS:            draft.EffectiveAtMS,
+		ExpiresAtMS:              draft.ExpiresAtMS,
+		Source:                   draft.Source,
+		ContentHash:              draft.ContentHash,
+		Signature:                draft.Signature,
+		Status:                   "active",
+		CreatedAtMS:              nowMS,
+		CreatedBy:                operator,
+	}
+
+	id, err := s.store.SavePricePolicy(ctx, record)
+	if err != nil {
+		return nil, err
+	}
+	record.ID = id
+
+	_ = s.store.RecordPriceAuditEvent(ctx, model.ModelPriceAuditEvent{
+		Action:      "export_policy",
+		Provider:    provider,
+		Model:       modelName,
+		SnapshotID:  &snapshotID,
+		Operator:    operator,
+		Reason:      "policy snapshot exported",
+		DetailsJSON: fmt.Sprintf(`{"policy_version":"%s","content_hash":"%s"}`, draft.PolicyVersion, draft.ContentHash),
+		CreatedAtMS: nowMS,
+	})
+
+	return policyToSnapshot(&record), nil
+}
+
+func (s *Service) ListApprovedPolicySnapshots(ctx context.Context, filter modelpricerepo.PolicyFilter) ([]model.ModelPricePolicy, int64, error) {
+	return s.store.ListPricePolicies(ctx, filter)
+}
+
+func (s *Service) GetPolicySnapshot(ctx context.Context, id int64) (*model.ModelPricePolicy, *PolicySnapshot, error) {
+	policy, err := s.store.GetPricePolicyByID(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if policy == nil {
+		return nil, nil, errors.New("policy not found")
+	}
+	return policy, policyToSnapshot(policy), nil
+}
+
+func (s *Service) RevokePolicySnapshot(ctx context.Context, id int64, operator, reason string) error {
+	policy, err := s.store.GetPricePolicyByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if policy == nil {
+		return errors.New("policy not found")
+	}
+	if policy.Status == "revoked" {
+		return nil
+	}
+	nowMS := time.Now().UnixMilli()
+	if err := s.store.UpdatePricePolicyStatus(ctx, id, "revoked", operator, reason, nowMS); err != nil {
+		return err
+	}
+	_ = s.store.RecordPriceAuditEvent(ctx, model.ModelPriceAuditEvent{
+		Action:      "revoke_policy",
+		Provider:    policy.Provider,
+		Model:       policy.Model,
+		Operator:    operator,
+		Reason:      reason,
+		DetailsJSON: fmt.Sprintf(`{"policy_version":"%s"}`, policy.PolicyVersion),
+		CreatedAtMS: nowMS,
+	})
+	return nil
+}
+
+func (s *Service) RollbackPolicySnapshot(ctx context.Context, id int64, operator, reason string) (*PolicySnapshot, error) {
+	curr, err := s.store.GetPricePolicyByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if curr == nil {
+		return nil, errors.New("policy not found")
+	}
+
+	prev, err := s.store.GetPreviousApprovedPricePolicy(ctx, curr.Provider, curr.Model, curr.ID)
+	if err != nil {
+		return nil, err
+	}
+	if prev == nil {
+		return nil, fmt.Errorf("no previous approved policy found for %s/%s", curr.Provider, curr.Model)
+	}
+
+	nowMS := time.Now().UnixMilli()
+	if prev.ExpiresAtMS > 0 && prev.ExpiresAtMS <= nowMS {
+		return nil, errors.New("previous approved policy has expired, cannot rollback")
+	}
+
+	_ = s.store.UpdatePricePolicyStatus(ctx, curr.ID, "rolled_back", operator, reason, nowMS)
+
+	totalPolicies, _, _ := s.store.ListPricePolicies(ctx, modelpricerepo.PolicyFilter{
+		Provider: prev.Provider,
+		Model:    prev.Model,
+	})
+	newVersion := fmt.Sprintf("cpamp-%s-%s-r%d", prev.Provider, prev.Model, len(totalPolicies)+1)
+
+	newPolicy := model.ModelPricePolicy{
+		SnapshotID:               prev.SnapshotID,
+		PolicyVersion:            newVersion,
+		Provider:                 prev.Provider,
+		Model:                    prev.Model,
+		UpstreamModelHash:        prev.UpstreamModelHash,
+		PriceStatus:              prev.PriceStatus,
+		BillingUnit:              prev.BillingUnit,
+		PromptPer1M:              prev.PromptPer1M,
+		CompletionPer1M:          prev.CompletionPer1M,
+		CachePer1M:               prev.CachePer1M,
+		CacheReadPer1M:           prev.CacheReadPer1M,
+		CacheCreationPer1M:       prev.CacheCreationPer1M,
+		UnitPrice:                prev.UnitPrice,
+		MaxRequestCostUSD:        prev.MaxRequestCostUSD,
+		ProviderDailyBudgetUSD:   prev.ProviderDailyBudgetUSD,
+		ProviderMonthlyBudgetUSD: prev.ProviderMonthlyBudgetUSD,
+		GlobalDailyBudgetUSD:     prev.GlobalDailyBudgetUSD,
+		GlobalMonthlyBudgetUSD:   prev.GlobalMonthlyBudgetUSD,
+		EffectiveAtMS:            nowMS,
+		ExpiresAtMS:              prev.ExpiresAtMS,
+		Source:                   prev.Source,
+		Status:                   "active",
+		CreatedAtMS:              nowMS,
+		CreatedBy:                operator,
+	}
+
+	snap := policyToSnapshot(&newPolicy)
+	newPolicy.ContentHash = snap.ComputeContentHash()
+	snap.ContentHash = newPolicy.ContentHash
+
+	newID, err := s.store.SavePricePolicy(ctx, newPolicy)
+	if err != nil {
+		return nil, err
+	}
+	newPolicy.ID = newID
+
+	_ = s.store.RecordPriceAuditEvent(ctx, model.ModelPriceAuditEvent{
+		Action:      "rollback_policy",
+		Provider:    newPolicy.Provider,
+		Model:       newPolicy.Model,
+		Operator:    operator,
+		Reason:      reason,
+		DetailsJSON: fmt.Sprintf(`{"from_version":"%s","to_version":"%s"}`, curr.PolicyVersion, newPolicy.PolicyVersion),
+		CreatedAtMS: nowMS,
+	})
+
+	return snap, nil
+}
+
 func (s *Service) DiscoverRuntimeModels(ctx context.Context) ([]string, error) {
 	if s.setupResolver == nil {
 		return nil, errors.New("runtime model discovery failed: missing setup resolver")

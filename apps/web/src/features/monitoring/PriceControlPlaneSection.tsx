@@ -6,6 +6,7 @@ import type {
   ModelPriceFreezeStatus,
   ModelPriceSnapshot,
   ModelPriceAuditEvent,
+  ModelPricePolicy,
 } from '@/utils/usage';
 import styles from './PriceControlPlaneSection.module.scss';
 
@@ -24,13 +25,17 @@ export function PriceControlPlaneSection({
   const [frozenList, setFrozenList] = useState<ModelPriceFreezeStatus[]>([]);
   const [snapshots, setSnapshots] = useState<ModelPriceSnapshot[]>([]);
   const [auditEvents, setAuditEvents] = useState<ModelPriceAuditEvent[]>([]);
-  const [activeTab, setActiveTab] = useState<'candidates' | 'frozen' | 'history' | 'audit'>('candidates');
+  const [policies, setPolicies] = useState<ModelPricePolicy[]>([]);
+  const [activeTab, setActiveTab] = useState<'candidates' | 'frozen' | 'history' | 'audit' | 'policies'>('candidates');
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<number | string | null>(null);
 
   const [freezeProvider, setFreezeProvider] = useState('');
   const [freezeModel, setFreezeModel] = useState('');
   const [freezeReason, setFreezeReason] = useState('');
+
+  const [exportProvider, setExportProvider] = useState('');
+  const [exportModel, setExportModel] = useState('');
 
   const loadData = useCallback(async () => {
     if (!serviceBase) return;
@@ -49,6 +54,9 @@ export function PriceControlPlaneSection({
       } else if (activeTab === 'audit') {
         const auditRes = await usageServiceApi.getModelPriceAudit(serviceBase, undefined, undefined, 50, 0, managementKey);
         setAuditEvents(auditRes?.events || []);
+      } else if (activeTab === 'policies') {
+        const polRes = await usageServiceApi.getModelPricePolicies(serviceBase, { limit: 50 }, managementKey);
+        setPolicies(polRes?.policies || []);
       }
     } catch {
       // ignore in UI, error shown via toast
@@ -119,6 +127,48 @@ export function PriceControlPlaneSection({
     }
   };
 
+  const handleExportPolicy = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!exportModel.trim()) return;
+    setActionLoading('export-policy');
+    try {
+      await usageServiceApi.exportModelPricePolicy(serviceBase, exportProvider.trim(), exportModel.trim(), managementKey);
+      setExportProvider('');
+      setExportModel('');
+      await loadData();
+      onPriceChanged?.();
+    } catch {
+      // handled
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRevokePolicy = async (id: number) => {
+    setActionLoading(`revoke-${id}`);
+    try {
+      await usageServiceApi.revokeModelPricePolicy(serviceBase, id, 'revoked by admin', managementKey);
+      await loadData();
+    } catch {
+      // handled
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRollbackPolicy = async (id: number) => {
+    setActionLoading(`rollback-${id}`);
+    try {
+      await usageServiceApi.rollbackModelPricePolicy(serviceBase, id, 'rollback by admin', managementKey);
+      await loadData();
+      onPriceChanged?.();
+    } catch {
+      // handled
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const formatDate = (ts?: number) => {
     if (!ts || ts <= 0) return '-';
     const d = new Date(ts);
@@ -177,6 +227,12 @@ export function PriceControlPlaneSection({
           onClick={() => setActiveTab('history')}
         >
           价格快照与历史
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === 'policies' ? styles.tabActive : ''}`}
+          onClick={() => setActiveTab('policies')}
+        >
+          策略快照与同步 ({policies.length})
         </button>
         <button
           className={`${styles.tab} ${activeTab === 'audit' ? styles.tabActive : ''}`}
@@ -352,6 +408,92 @@ export function PriceControlPlaneSection({
                       <td><code>{s.priceHash.slice(0, 12)}...</code></td>
                       <td>{s.createdBy || 'system'}</td>
                       <td>{formatDate(s.createdAtMs)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'policies' && (
+        <div className={styles.content}>
+          <form className={styles.freezeForm} onSubmit={handleExportPolicy}>
+            <h3>导出已批准生效策略 (Export Approved Policy)</h3>
+            <div className={styles.formRow}>
+              <input
+                placeholder="供应商 (Provider)"
+                value={exportProvider}
+                onChange={(e) => setExportProvider(e.target.value)}
+              />
+              <input
+                placeholder="模型名称 (Model) *"
+                value={exportModel}
+                onChange={(e) => setExportModel(e.target.value)}
+                required
+              />
+              <button type="submit" disabled={actionLoading === 'export-policy'}>
+                {actionLoading === 'export-policy' ? '导出中...' : '生成策略快照'}
+              </button>
+            </div>
+          </form>
+
+          {policies.length === 0 ? (
+            <div className={styles.empty}>暂无已生成的策略快照</div>
+          ) : (
+            <div className={styles.tableWrapper}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>版本 (Version)</th>
+                    <th>供应商/模型 (Provider / Model)</th>
+                    <th>价格 (Price)</th>
+                    <th>哈希 (Content Hash)</th>
+                    <th>生效时间 (Effective)</th>
+                    <th>过期时间 (Expires)</th>
+                    <th>状态 (Status)</th>
+                    <th>操作 (Actions)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {policies.map((p) => (
+                    <tr key={p.id}>
+                      <td><code>{p.policyVersion}</code></td>
+                      <td><strong>{p.provider || 'default'}</strong> / {p.model}</td>
+                      <td>
+                        ${p.prompt} / ${p.completion} ({p.billingUnit || 'tokens'})
+                      </td>
+                      <td><code>{p.contentHash.slice(0, 16)}...</code></td>
+                      <td>{formatDate(p.effectiveAtMs)}</td>
+                      <td>{formatDate(p.expiresAtMs)}</td>
+                      <td>
+                        <span className={`${styles.statusBadge} ${p.status === 'active' ? styles.statusApproved : styles.statusBlocked}`}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td>
+                        <div className={styles.btnGroup}>
+                          {p.status === 'active' && (
+                            <>
+                              <button
+                                className={styles.rejectBtn}
+                                onClick={() => handleRollbackPolicy(p.id)}
+                                disabled={actionLoading === `rollback-${p.id}`}
+                              >
+                                回滚
+                              </button>
+                              <button
+                                className={styles.rejectBtn}
+                                onClick={() => handleRevokePolicy(p.id)}
+                                disabled={actionLoading === `revoke-${p.id}`}
+                              >
+                                撤销
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

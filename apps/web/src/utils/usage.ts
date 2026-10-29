@@ -125,6 +125,44 @@ export interface ModelPriceFreezeStatus {
   frozenBy?: string;
 }
 
+export interface ModelPricePolicy {
+  id: number;
+  snapshotId: number;
+  policyVersion: string;
+  provider: string;
+  model: string;
+  upstreamModelHash: string;
+  priceStatus: string;
+  billingUnit: string;
+  prompt: number;
+  completion: number;
+  cache: number;
+  cacheRead?: number;
+  cacheCreation?: number;
+  unitPrice?: number;
+  maxRequestCostUsd: number;
+  providerDailyBudgetUsd: number;
+  providerMonthlyBudgetUsd: number;
+  globalDailyBudgetUsd: number;
+  globalMonthlyBudgetUsd: number;
+  effectiveAtMs: number;
+  expiresAtMs?: number;
+  source: string;
+  contentHash: string;
+  signature?: string;
+  status: 'active' | 'revoked' | 'rolled_back' | 'superseded';
+  createdAtMs: number;
+  createdBy: string;
+  revokedAtMs?: number;
+  revokedBy?: string;
+  revokeReason?: string;
+}
+
+export interface ModelPricePoliciesResponse {
+  policies: ModelPricePolicy[];
+  total: number;
+}
+
 export interface UsageTokens {
   input_tokens?: number;
   output_tokens?: number;

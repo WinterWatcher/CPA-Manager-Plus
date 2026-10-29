@@ -112,6 +112,40 @@ type ModelPriceFreezeStatus struct {
 	FrozenBy     string `json:"frozenBy,omitempty"`
 }
 
+// ModelPricePolicy records an approved policy snapshot exported or managed by CPAMP.
+type ModelPricePolicy struct {
+	ID                       int64   `json:"id"`
+	SnapshotID               int64   `json:"snapshotId"`
+	PolicyVersion            string  `json:"policyVersion"`
+	Provider                 string  `json:"provider"`
+	Model                    string  `json:"model"`
+	UpstreamModelHash        string  `json:"upstreamModelHash"`
+	PriceStatus              string  `json:"priceStatus"`
+	BillingUnit              string  `json:"billingUnit"`
+	PromptPer1M              float64 `json:"prompt"`
+	CompletionPer1M          float64 `json:"completion"`
+	CachePer1M               float64 `json:"cache"`
+	CacheReadPer1M           float64 `json:"cacheRead,omitempty"`
+	CacheCreationPer1M       float64 `json:"cacheCreation,omitempty"`
+	UnitPrice                float64 `json:"unitPrice,omitempty"`
+	MaxRequestCostUSD        float64 `json:"maxRequestCostUsd"`
+	ProviderDailyBudgetUSD   float64 `json:"providerDailyBudgetUsd"`
+	ProviderMonthlyBudgetUSD float64 `json:"providerMonthlyBudgetUsd"`
+	GlobalDailyBudgetUSD     float64 `json:"globalDailyBudgetUsd"`
+	GlobalMonthlyBudgetUSD   float64 `json:"globalMonthlyBudgetUsd"`
+	EffectiveAtMS            int64   `json:"effectiveAtMs"`
+	ExpiresAtMS              int64   `json:"expiresAtMs,omitempty"`
+	Source                   string  `json:"source"`
+	ContentHash              string  `json:"contentHash"`
+	Signature                string  `json:"signature,omitempty"`
+	Status                   string  `json:"status"` // active, revoked, rolled_back, superseded
+	CreatedAtMS              int64   `json:"createdAtMs"`
+	CreatedBy                string  `json:"createdBy"`
+	RevokedAtMS              *int64  `json:"revokedAtMs,omitempty"`
+	RevokedBy                string  `json:"revokedBy,omitempty"`
+	RevokeReason             string  `json:"revokeReason,omitempty"`
+}
+
 type ModelPriceSyncResult struct {
 	Imported  int      `json:"imported"`
 	Skipped   int      `json:"skipped"`

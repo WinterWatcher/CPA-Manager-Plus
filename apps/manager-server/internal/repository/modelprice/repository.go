@@ -25,6 +25,15 @@ type CandidateFilter struct {
 	Offset     int
 }
 
+type PolicyFilter struct {
+	Provider string
+	Model    string
+	Status   string
+	Version  string
+	Limit    int
+	Offset   int
+}
+
 type Repository interface {
 	LoadAll(ctx context.Context) (map[string]model.ModelPrice, error)
 	LoadAllTx(ctx context.Context, tx *sql.Tx) (map[string]model.ModelPrice, error)
@@ -52,6 +61,15 @@ type Repository interface {
 
 	// Active price upsert from approved candidate
 	ApplyApprovedCandidate(ctx context.Context, candidate model.ModelPriceCandidate, reviewer, reason string) (*model.ModelPriceSnapshot, error)
+
+	// Policy snapshot operations
+	SavePolicy(ctx context.Context, policy model.ModelPricePolicy) (int64, error)
+	GetPolicyByID(ctx context.Context, id int64) (*model.ModelPricePolicy, error)
+	GetPolicyByVersion(ctx context.Context, version string) (*model.ModelPricePolicy, error)
+	GetActivePolicy(ctx context.Context, provider, model string) (*model.ModelPricePolicy, error)
+	ListPolicies(ctx context.Context, filter PolicyFilter) ([]model.ModelPricePolicy, int64, error)
+	UpdatePolicyStatus(ctx context.Context, id int64, status string, revokedBy, reason string, revokedAtMS int64) error
+	GetPreviousApprovedPolicy(ctx context.Context, provider, model string, beforeID int64) (*model.ModelPricePolicy, error)
 }
 
 type repository struct {
@@ -1119,4 +1137,196 @@ func (r *repository) ApplyApprovedCandidate(ctx context.Context, c model.ModelPr
 		CreatedAtMS:        nowMS,
 		CreatedBy:          reviewer,
 	}, nil
+}
+
+func (r *repository) SavePolicy(ctx context.Context, p model.ModelPricePolicy) (int64, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if p.Status == "active" {
+		_, err := tx.ExecContext(ctx, `update model_price_policies set status = 'superseded' where provider = ? and model = ? and status = 'active'`, p.Provider, p.Model)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	res, err := tx.ExecContext(ctx, `insert into model_price_policies (
+		snapshot_id, policy_version, provider, model, upstream_model_hash,
+		price_status, billing_unit, prompt_per_1m, completion_per_1m, cache_per_1m,
+		cache_read_per_1m, cache_creation_per_1m, unit_price, max_request_cost_usd,
+		provider_daily_budget_usd, provider_monthly_budget_usd, global_daily_budget_usd, global_monthly_budget_usd,
+		effective_at_ms, expires_at_ms, source, content_hash, signature, status, created_at_ms, created_by
+	) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.SnapshotID, p.PolicyVersion, p.Provider, p.Model, p.UpstreamModelHash,
+		p.PriceStatus, p.BillingUnit, p.PromptPer1M, p.CompletionPer1M, p.CachePer1M,
+		p.CacheReadPer1M, p.CacheCreationPer1M, p.UnitPrice, p.MaxRequestCostUSD,
+		p.ProviderDailyBudgetUSD, p.ProviderMonthlyBudgetUSD, p.GlobalDailyBudgetUSD, p.GlobalMonthlyBudgetUSD,
+		p.EffectiveAtMS, p.ExpiresAtMS, p.Source, p.ContentHash, p.Signature, p.Status, p.CreatedAtMS, p.CreatedBy,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
+}
+
+func (r *repository) scanPolicy(row interface{ Scan(dest ...any) error }) (*model.ModelPricePolicy, error) {
+	var p model.ModelPricePolicy
+	var revAtNull sql.NullInt64
+	var revByNull, revReasonNull sql.NullString
+	if err := row.Scan(
+		&p.ID, &p.SnapshotID, &p.PolicyVersion, &p.Provider, &p.Model, &p.UpstreamModelHash,
+		&p.PriceStatus, &p.BillingUnit, &p.PromptPer1M, &p.CompletionPer1M, &p.CachePer1M,
+		&p.CacheReadPer1M, &p.CacheCreationPer1M, &p.UnitPrice, &p.MaxRequestCostUSD,
+		&p.ProviderDailyBudgetUSD, &p.ProviderMonthlyBudgetUSD, &p.GlobalDailyBudgetUSD, &p.GlobalMonthlyBudgetUSD,
+		&p.EffectiveAtMS, &p.ExpiresAtMS, &p.Source, &p.ContentHash, &p.Signature,
+		&p.Status, &p.CreatedAtMS, &p.CreatedBy, &revAtNull, &revByNull, &revReasonNull,
+	); err != nil {
+		return nil, err
+	}
+	if revAtNull.Valid {
+		v := revAtNull.Int64
+		p.RevokedAtMS = &v
+	}
+	p.RevokedBy = revByNull.String
+	p.RevokeReason = revReasonNull.String
+	return &p, nil
+}
+
+func (r *repository) GetPolicyByID(ctx context.Context, id int64) (*model.ModelPricePolicy, error) {
+	query := `select id, snapshot_id, policy_version, provider, model, upstream_model_hash,
+		price_status, billing_unit, prompt_per_1m, completion_per_1m, cache_per_1m,
+		cache_read_per_1m, cache_creation_per_1m, unit_price, max_request_cost_usd,
+		provider_daily_budget_usd, provider_monthly_budget_usd, global_daily_budget_usd, global_monthly_budget_usd,
+		effective_at_ms, expires_at_ms, source, content_hash, signature, status, created_at_ms, created_by,
+		revoked_at_ms, revoked_by, revoke_reason
+		from model_price_policies where id = ?`
+	row := r.db.QueryRowContext(ctx, query, id)
+	p, err := r.scanPolicy(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return p, err
+}
+
+func (r *repository) GetPolicyByVersion(ctx context.Context, version string) (*model.ModelPricePolicy, error) {
+	query := `select id, snapshot_id, policy_version, provider, model, upstream_model_hash,
+		price_status, billing_unit, prompt_per_1m, completion_per_1m, cache_per_1m,
+		cache_read_per_1m, cache_creation_per_1m, unit_price, max_request_cost_usd,
+		provider_daily_budget_usd, provider_monthly_budget_usd, global_daily_budget_usd, global_monthly_budget_usd,
+		effective_at_ms, expires_at_ms, source, content_hash, signature, status, created_at_ms, created_by,
+		revoked_at_ms, revoked_by, revoke_reason
+		from model_price_policies where policy_version = ?`
+	row := r.db.QueryRowContext(ctx, query, version)
+	p, err := r.scanPolicy(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return p, err
+}
+
+func (r *repository) GetActivePolicy(ctx context.Context, provider, modelName string) (*model.ModelPricePolicy, error) {
+	query := `select id, snapshot_id, policy_version, provider, model, upstream_model_hash,
+		price_status, billing_unit, prompt_per_1m, completion_per_1m, cache_per_1m,
+		cache_read_per_1m, cache_creation_per_1m, unit_price, max_request_cost_usd,
+		provider_daily_budget_usd, provider_monthly_budget_usd, global_daily_budget_usd, global_monthly_budget_usd,
+		effective_at_ms, expires_at_ms, source, content_hash, signature, status, created_at_ms, created_by,
+		revoked_at_ms, revoked_by, revoke_reason
+		from model_price_policies where provider = ? and model = ? and status = 'active' order by id desc limit 1`
+	row := r.db.QueryRowContext(ctx, query, provider, modelName)
+	p, err := r.scanPolicy(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return p, err
+}
+
+func (r *repository) ListPolicies(ctx context.Context, filter PolicyFilter) ([]model.ModelPricePolicy, int64, error) {
+	where := []string{"1=1"}
+	var args []any
+	if filter.Provider != "" {
+		where = append(where, "provider = ?")
+		args = append(args, filter.Provider)
+	}
+	if filter.Model != "" {
+		where = append(where, "model like ?")
+		args = append(args, "%"+filter.Model+"%")
+	}
+	if filter.Status != "" {
+		where = append(where, "status = ?")
+		args = append(args, filter.Status)
+	}
+	if filter.Version != "" {
+		where = append(where, "policy_version = ?")
+		args = append(args, filter.Version)
+	}
+	whereClause := strings.Join(where, " and ")
+
+	var total int64
+	if err := r.db.QueryRowContext(ctx, "select count(*) from model_price_policies where "+whereClause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	limit := filter.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	query := fmt.Sprintf(`select id, snapshot_id, policy_version, provider, model, upstream_model_hash,
+		price_status, billing_unit, prompt_per_1m, completion_per_1m, cache_per_1m,
+		cache_read_per_1m, cache_creation_per_1m, unit_price, max_request_cost_usd,
+		provider_daily_budget_usd, provider_monthly_budget_usd, global_daily_budget_usd, global_monthly_budget_usd,
+		effective_at_ms, expires_at_ms, source, content_hash, signature, status, created_at_ms, created_by,
+		revoked_at_ms, revoked_by, revoke_reason
+		from model_price_policies where %s order by created_at_ms desc, id desc limit ? offset ?`, whereClause)
+	queryArgs := append(args, limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, query, queryArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var list []model.ModelPricePolicy
+	for rows.Next() {
+		p, err := r.scanPolicy(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		list = append(list, *p)
+	}
+	return list, total, rows.Err()
+}
+
+func (r *repository) UpdatePolicyStatus(ctx context.Context, id int64, status string, revokedBy, reason string, revokedAtMS int64) error {
+	_, err := r.db.ExecContext(ctx, `update model_price_policies set status = ?, revoked_by = ?, revoke_reason = ?, revoked_at_ms = ? where id = ?`,
+		status, revokedBy, reason, revokedAtMS, id)
+	return err
+}
+
+func (r *repository) GetPreviousApprovedPolicy(ctx context.Context, provider, modelName string, beforeID int64) (*model.ModelPricePolicy, error) {
+	query := `select id, snapshot_id, policy_version, provider, model, upstream_model_hash,
+		price_status, billing_unit, prompt_per_1m, completion_per_1m, cache_per_1m,
+		cache_read_per_1m, cache_creation_per_1m, unit_price, max_request_cost_usd,
+		provider_daily_budget_usd, provider_monthly_budget_usd, global_daily_budget_usd, global_monthly_budget_usd,
+		effective_at_ms, expires_at_ms, source, content_hash, signature, status, created_at_ms, created_by,
+		revoked_at_ms, revoked_by, revoke_reason
+		from model_price_policies where provider = ? and model = ? and id < ? and status in ('active', 'superseded')
+		order by id desc limit 1`
+	row := r.db.QueryRowContext(ctx, query, provider, modelName, beforeID)
+	p, err := r.scanPolicy(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return p, err
 }

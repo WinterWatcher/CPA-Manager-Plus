@@ -44,7 +44,11 @@ import type {
   ModelPriceSnapshot,
   ModelPriceAuditEvent,
   ModelPriceFreezeStatus,
+  ModelPricePolicy,
+  ModelPricePoliciesResponse,
 } from '@/utils/usage';
+
+export type { ModelPricePolicy, ModelPricePoliciesResponse };
 
 export interface ModelPriceCandidatesResponse {
   candidates: ModelPriceCandidate[];
@@ -3708,6 +3712,81 @@ export const usageServiceApi = {
         buildUrl(base, '/v0/management/model-prices/audit'),
         {
           params: { provider, model, limit, offset },
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  getModelPricePolicies: async (
+    base: string,
+    params?: { provider?: string; model?: string; status?: string; version?: string; limit?: number; offset?: number },
+    managementKey?: string
+  ): Promise<ModelPricePoliciesResponse> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.get<ModelPricePoliciesResponse>(
+        buildUrl(base, '/v0/management/model-prices/policies'),
+        {
+          params,
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  exportModelPricePolicy: async (
+    base: string,
+    provider: string,
+    model: string,
+    managementKey?: string
+  ): Promise<{ success: boolean; snapshot: any }> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.post<{ success: boolean; snapshot: any }>(
+        buildUrl(base, '/v0/management/model-prices/policies/export'),
+        { provider, model },
+        {
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  revokeModelPricePolicy: async (
+    base: string,
+    id: number,
+    reason: string,
+    managementKey?: string
+  ): Promise<{ success: boolean }> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.post<{ success: boolean }>(
+        buildUrl(base, `/v0/management/model-prices/policies/${id}/revoke`),
+        { reason },
+        {
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  rollbackModelPricePolicy: async (
+    base: string,
+    id: number,
+    reason: string,
+    managementKey?: string
+  ): Promise<{ success: boolean; snapshot: any }> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.post<{ success: boolean; snapshot: any }>(
+        buildUrl(base, `/v0/management/model-prices/policies/${id}/rollback`),
+        { reason },
+        {
           timeout: USAGE_SERVICE_TIMEOUT_MS,
           headers: authHeaders(managementKey),
         }

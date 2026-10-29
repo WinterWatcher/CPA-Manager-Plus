@@ -17,6 +17,10 @@ vi.mock('@/services/api/usageService', () => ({
     getFrozenModelPrices: vi.fn(),
     getModelPriceHistory: vi.fn(),
     getModelPriceAudit: vi.fn(),
+    getModelPricePolicies: vi.fn(),
+    exportModelPricePolicy: vi.fn(),
+    revokeModelPricePolicy: vi.fn(),
+    rollbackModelPricePolicy: vi.fn(),
     approveModelPriceCandidate: vi.fn(),
     rejectModelPriceCandidate: vi.fn(),
     freezeModelPrice: vi.fn(),
@@ -137,5 +141,78 @@ describe('PriceControlPlaneSection', () => {
     const text = JSON.stringify(renderer.toJSON());
     expect(text).toContain('critical free_to_paid drift');
     expect(text).toContain('解除冻结');
+  });
+
+  it('switches to policies tab and displays policies with rollback and revoke buttons', async () => {
+    vi.mocked(usageServiceApi.getModelPricePolicies).mockResolvedValue({
+      policies: [
+        {
+          id: 10,
+          snapshotId: 100,
+          policyVersion: 'cpamp-openai-gpt-4o-r1',
+          provider: 'openai',
+          model: 'gpt-4o',
+          upstreamModelHash: 'hash-abc',
+          priceStatus: 'paid_confirmed',
+          billingUnit: 'tokens',
+          prompt: 2.5,
+          completion: 10.0,
+          cache: 1.25,
+          unitPrice: 0,
+          maxRequestCostUsd: 1.0,
+          providerDailyBudgetUsd: 100,
+          providerMonthlyBudgetUsd: 2000,
+          globalDailyBudgetUsd: 500,
+          globalMonthlyBudgetUsd: 10000,
+          effectiveAtMs: 1700000000000,
+          source: 'cpamp-approved',
+          contentHash: 'sha256:11223344556677889900aabbccddeeff',
+          status: 'active',
+          createdAtMs: 1700000000000,
+          createdBy: 'admin',
+        },
+      ],
+      total: 1,
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<PriceControlPlaneSection serviceBase="http://mock" />);
+    });
+
+    const policyTabBtn = renderer.root.findAll(
+      (node) => node.type === 'button' && typeof node.children[0] === 'string' && (node.children[0] as string).includes('策略快照与同步')
+    )[0];
+    expect(policyTabBtn).toBeDefined();
+
+    await act(async () => {
+      policyTabBtn.props.onClick();
+    });
+
+    const text = JSON.stringify(renderer.toJSON());
+    expect(text).toContain('cpamp-openai-gpt-4o-r1');
+    expect(text).toContain('sha256:11223344');
+    expect(text).toContain('回滚');
+    expect(text).toContain('撤销');
+
+    // Test rollback action
+    vi.mocked(usageServiceApi.rollbackModelPricePolicy).mockResolvedValue({ success: true, snapshot: {} });
+    const rollbackBtn = renderer.root.findAll((node) => node.type === 'button' && node.children.includes('回滚'))[0];
+    expect(rollbackBtn).toBeDefined();
+
+    await act(async () => {
+      rollbackBtn.props.onClick();
+    });
+    expect(usageServiceApi.rollbackModelPricePolicy).toHaveBeenCalledWith('http://mock', 10, 'rollback by admin', undefined);
+
+    // Test revoke action
+    vi.mocked(usageServiceApi.revokeModelPricePolicy).mockResolvedValue({ success: true });
+    const revokeBtn = renderer.root.findAll((node) => node.type === 'button' && node.children.includes('撤销'))[0];
+    expect(revokeBtn).toBeDefined();
+
+    await act(async () => {
+      revokeBtn.props.onClick();
+    });
+    expect(usageServiceApi.revokeModelPricePolicy).toHaveBeenCalledWith('http://mock', 10, 'revoked by admin', undefined);
   });
 });
