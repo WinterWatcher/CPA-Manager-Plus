@@ -47,6 +47,7 @@ import {
 } from './model/modelPricesPageModel';
 import { readModelPricesPageUiState, writeModelPricesPageUiState } from './modelPricesPageUiState';
 import { resolveModelPriceSyncNotification } from './model/modelPriceSyncFeedback';
+import { PriceControlPlaneSection } from './PriceControlPlaneSection';
 import styles from './ModelPricesPage.module.scss';
 
 const FILTERS: ModelPriceFilter[] = ['all', 'missing', 'candidates', 'saved'];
@@ -910,6 +911,11 @@ export function ModelPricesPage() {
             <span>{syncResult.unmatched.join(', ')}</span>
           </div>
         ) : null}
+
+        <PriceControlPlaneSection
+          serviceBase={modelPriceServiceBase}
+          managementKey={managementKey}
+        />
       </section>
     </div>
   );

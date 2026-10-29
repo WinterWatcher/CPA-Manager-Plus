@@ -2137,6 +2137,11 @@ const archiveRecordExpression = `json_patch(
 		'quantity', coalesce(e.quantity, 0),
 		'input_quantity', coalesce(e.input_quantity, 0),
 		'output_quantity', coalesce(e.output_quantity, 0),
+		'price_snapshot_id', coalesce(e.price_snapshot_id, 0),
+		'price_hash', coalesce(e.price_hash, ''),
+		'price_billing_unit', coalesce(e.price_billing_unit, ''),
+		'price_unit_price', coalesce(e.price_unit_price, 0),
+		'price_status', coalesce(e.price_status, ''),
 		'created_at_ms', e.created_at_ms
 	)
 )`

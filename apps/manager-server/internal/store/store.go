@@ -301,6 +301,78 @@ func (s *Store) UpsertSyncedModelPrices(ctx context.Context, prices map[string]M
 	return s.ModelPrices.UpsertSynced(ctx, prices)
 }
 
+func (s *Store) SavePriceCandidates(ctx context.Context, candidates []model.ModelPriceCandidate) error {
+	s.modelPricesMu.Lock()
+	defer s.modelPricesMu.Unlock()
+	return s.ModelPrices.SaveCandidates(ctx, candidates)
+}
+
+func (s *Store) ListPriceCandidates(ctx context.Context, filter modelprice.CandidateFilter) ([]model.ModelPriceCandidate, int64, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.ListCandidates(ctx, filter)
+}
+
+func (s *Store) GetPriceCandidateByID(ctx context.Context, id int64) (*model.ModelPriceCandidate, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.GetCandidateByID(ctx, id)
+}
+
+func (s *Store) UpdatePriceCandidateReview(ctx context.Context, id int64, status, reviewer, reason string) error {
+	s.modelPricesMu.Lock()
+	defer s.modelPricesMu.Unlock()
+	return s.ModelPrices.UpdateCandidateReview(ctx, id, status, reviewer, reason)
+}
+
+func (s *Store) ApplyApprovedPriceCandidate(ctx context.Context, candidate model.ModelPriceCandidate, reviewer, reason string) (*model.ModelPriceSnapshot, error) {
+	s.modelPricesMu.Lock()
+	defer s.modelPricesMu.Unlock()
+	return s.ModelPrices.ApplyApprovedCandidate(ctx, candidate, reviewer, reason)
+}
+
+func (s *Store) CreatePriceSnapshot(ctx context.Context, snapshot model.ModelPriceSnapshot) (int64, error) {
+	s.modelPricesMu.Lock()
+	defer s.modelPricesMu.Unlock()
+	return s.ModelPrices.CreateSnapshot(ctx, snapshot)
+}
+
+func (s *Store) ListPriceSnapshots(ctx context.Context, provider, modelName string, limit, offset int) ([]model.ModelPriceSnapshot, int64, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.ListSnapshots(ctx, provider, modelName, limit, offset)
+}
+
+func (s *Store) RecordPriceAuditEvent(ctx context.Context, event model.ModelPriceAuditEvent) error {
+	s.modelPricesMu.Lock()
+	defer s.modelPricesMu.Unlock()
+	return s.ModelPrices.RecordAuditEvent(ctx, event)
+}
+
+func (s *Store) ListPriceAuditEvents(ctx context.Context, provider, modelName string, limit, offset int) ([]model.ModelPriceAuditEvent, int64, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.ListAuditEvents(ctx, provider, modelName, limit, offset)
+}
+
+func (s *Store) SetPriceFreezeStatus(ctx context.Context, status model.ModelPriceFreezeStatus) error {
+	s.modelPricesMu.Lock()
+	defer s.modelPricesMu.Unlock()
+	return s.ModelPrices.SetFreezeStatus(ctx, status)
+}
+
+func (s *Store) GetPriceFreezeStatus(ctx context.Context, provider, modelName string) (*model.ModelPriceFreezeStatus, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.GetFreezeStatus(ctx, provider, modelName)
+}
+
+func (s *Store) ListPriceFrozenModels(ctx context.Context) ([]model.ModelPriceFreezeStatus, error) {
+	s.modelPricesMu.RLock()
+	defer s.modelPricesMu.RUnlock()
+	return s.ModelPrices.ListFrozenModels(ctx)
+}
+
 // WithModelPriceSnapshot prevents model-price mutations while a service reads
 // usage bands and applies the corresponding price book across multiple queries.
 func (s *Store) WithModelPriceSnapshot(read func() error) error {

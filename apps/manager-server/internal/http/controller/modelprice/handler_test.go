@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -308,5 +309,127 @@ func TestHandleRuntimeModels_AuthorizationAndResponse(t *testing.T) {
 	}
 	if status.Count != 2 || status.UnpricedCount != 2 {
 		t.Fatalf("expected count=2 and unpricedCount=2, got %d, %d", status.Count, status.UnpricedCount)
+	}
+}
+
+func TestCandidateApprovalAPIWorkflow(t *testing.T) {
+	// B5: API endpoints for candidates, approval, rejection, freeze, unfreeze, snapshots, and audit
+	cfg := testutil.NewConfig(t)
+	st := testutil.NewStore(t, cfg)
+	ctx := context.Background()
+
+	// 1. Initial price and candidate in store
+	_ = st.SaveModelPrices(ctx, map[string]store.ModelPrice{
+		"gpt-4": {Prompt: 10.0, Completion: 30.0},
+	})
+	_ = st.SavePriceCandidates(ctx, []model.ModelPriceCandidate{
+		{
+			Provider:           "openai",
+			Model:              "gpt-4",
+			PromptPer1M:        5.0,
+			CompletionPer1M:    15.0,
+			Source:             "models.dev",
+			CandidatePriceHash: "hash-cand-1",
+			ChangeKind:         model.ChangeKindPriceDecrease,
+			Status:             model.CandidateStatusPending,
+			DetectedAtMS:       1000,
+		},
+	})
+
+	handler := &Handler{App: &app.Context{
+		Config:            cfg,
+		AdminAuthService:  adminauthsvc.New(cfg, st),
+		ModelPriceService: modelpricesvc.New(st, nil),
+	}}
+
+	// Helper for authenticated requests
+	doAuthReq := func(method, path string, body []byte) *httptest.ResponseRecorder {
+		var bodyReader *bytes.Reader
+		if body != nil {
+			bodyReader = bytes.NewReader(body)
+		} else {
+			bodyReader = bytes.NewReader(nil)
+		}
+		req := httptest.NewRequest(method, path, bodyReader)
+		req.Header.Set("Authorization", "Bearer "+testutil.AdminKey)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		rec := httptest.NewRecorder()
+		handler.Handle(rec, req)
+		return rec
+	}
+
+	// 2. GET /candidates: list candidates
+	recList := doAuthReq(http.MethodGet, "/v0/management/model-prices/candidates?status=pending", nil)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("list candidates status = %d", recList.Code)
+	}
+	var listResp struct {
+		Candidates []model.ModelPriceCandidate `json:"candidates"`
+		Total      int64                       `json:"total"`
+	}
+	_ = json.NewDecoder(recList.Body).Decode(&listResp)
+	if listResp.Total != 1 || len(listResp.Candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", listResp.Total)
+	}
+	candID := listResp.Candidates[0].ID
+
+	// 3. GET /candidates/:id
+	recGet := doAuthReq(http.MethodGet, fmt.Sprintf("/v0/management/model-prices/candidates/%d", candID), nil)
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("get candidate status = %d", recGet.Code)
+	}
+
+	// 4. POST /candidates/:id/approve
+	recApprove := doAuthReq(http.MethodPost, fmt.Sprintf("/v0/management/model-prices/candidates/%d/approve", candID), []byte(`{"reason":"looks good"}`))
+	if recApprove.Code != http.StatusOK {
+		t.Fatalf("approve status = %d body = %s", recApprove.Code, recApprove.Body.String())
+	}
+
+	// 5. POST /freeze
+	recFreeze := doAuthReq(http.MethodPost, "/v0/management/model-prices/freeze", []byte(`{"provider":"openai","model":"gpt-4","reason":"suspect drift"}`))
+	if recFreeze.Code != http.StatusOK {
+		t.Fatalf("freeze status = %d", recFreeze.Code)
+	}
+
+	// 6. GET /frozen
+	recFrozen := doAuthReq(http.MethodGet, "/v0/management/model-prices/frozen", nil)
+	if recFrozen.Code != http.StatusOK {
+		t.Fatalf("frozen status = %d", recFrozen.Code)
+	}
+
+	// 7. POST /unfreeze
+	recUnfreeze := doAuthReq(http.MethodPost, "/v0/management/model-prices/unfreeze", []byte(`{"provider":"openai","model":"gpt-4","reason":"verified safe"}`))
+	if recUnfreeze.Code != http.StatusOK {
+		t.Fatalf("unfreeze status = %d body = %s", recUnfreeze.Code, recUnfreeze.Body.String())
+	}
+
+	// 8. GET /history (snapshots)
+	recHistory := doAuthReq(http.MethodGet, "/v0/management/model-prices/history?model=gpt-4", nil)
+	if recHistory.Code != http.StatusOK {
+		t.Fatalf("history status = %d", recHistory.Code)
+	}
+	var histResp struct {
+		Snapshots []model.ModelPriceSnapshot `json:"snapshots"`
+		Total     int64                      `json:"total"`
+	}
+	_ = json.NewDecoder(recHistory.Body).Decode(&histResp)
+	if histResp.Total != 1 || len(histResp.Snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot in history, got %d", histResp.Total)
+	}
+
+	// 9. GET /audit
+	recAudit := doAuthReq(http.MethodGet, "/v0/management/model-prices/audit?model=gpt-4", nil)
+	if recAudit.Code != http.StatusOK {
+		t.Fatalf("audit status = %d", recAudit.Code)
+	}
+	var auditResp struct {
+		Events []model.ModelPriceAuditEvent `json:"events"`
+		Total  int64                        `json:"total"`
+	}
+	_ = json.NewDecoder(recAudit.Body).Decode(&auditResp)
+	if auditResp.Total < 3 { // approve, freeze, unfreeze
+		t.Fatalf("expected at least 3 audit events, got %d", auditResp.Total)
 	}
 }

@@ -38,7 +38,32 @@ import {
   readAuthFileStatusPhysicalName,
   resolveAuthFileStatusMutationTarget,
 } from '@/utils/authFileStatusMutation';
-import type { ModelPrice } from '@/utils/usage';
+import type {
+  ModelPrice,
+  ModelPriceCandidate,
+  ModelPriceSnapshot,
+  ModelPriceAuditEvent,
+  ModelPriceFreezeStatus,
+} from '@/utils/usage';
+
+export interface ModelPriceCandidatesResponse {
+  candidates: ModelPriceCandidate[];
+  total: number;
+}
+
+export interface ModelPriceSnapshotsResponse {
+  snapshots: ModelPriceSnapshot[];
+  total: number;
+}
+
+export interface ModelPriceAuditEventsResponse {
+  events: ModelPriceAuditEvent[];
+  total: number;
+}
+
+export interface ModelPriceFrozenResponse {
+  frozen: ModelPriceFreezeStatus[];
+}
 
 const USAGE_SERVICE_ERROR_CODES = new Set([
   'request_failed',
@@ -3530,6 +3555,160 @@ export const usageServiceApi = {
         payload,
         {
           timeout: 45 * 1000,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  getModelPriceCandidates: async (
+    base: string,
+    params?: { status?: string; changeKind?: string; provider?: string; model?: string; limit?: number; offset?: number },
+    managementKey?: string
+  ): Promise<ModelPriceCandidatesResponse> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.get<ModelPriceCandidatesResponse>(
+        buildUrl(base, '/v0/management/model-prices/candidates'),
+        {
+          params,
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  approveModelPriceCandidate: async (
+    base: string,
+    id: number,
+    reason: string,
+    managementKey?: string
+  ): Promise<ModelPriceCandidate> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.post<ModelPriceCandidate>(
+        buildUrl(base, `/v0/management/model-prices/candidates/${id}/approve`),
+        { reason },
+        {
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  rejectModelPriceCandidate: async (
+    base: string,
+    id: number,
+    reason: string,
+    managementKey?: string
+  ): Promise<ModelPriceCandidate> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.post<ModelPriceCandidate>(
+        buildUrl(base, `/v0/management/model-prices/candidates/${id}/reject`),
+        { reason },
+        {
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  freezeModelPrice: async (
+    base: string,
+    provider: string,
+    model: string,
+    reason: string,
+    managementKey?: string
+  ): Promise<{ success: boolean }> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.post<{ success: boolean }>(
+        buildUrl(base, '/v0/management/model-prices/freeze'),
+        { provider, model, reason },
+        {
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  unfreezeModelPrice: async (
+    base: string,
+    provider: string,
+    model: string,
+    reason: string,
+    managementKey?: string
+  ): Promise<{ success: boolean }> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.post<{ success: boolean }>(
+        buildUrl(base, '/v0/management/model-prices/unfreeze'),
+        { provider, model, reason },
+        {
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  getFrozenModelPrices: async (
+    base: string,
+    managementKey?: string
+  ): Promise<ModelPriceFrozenResponse> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.get<ModelPriceFrozenResponse>(
+        buildUrl(base, '/v0/management/model-prices/frozen'),
+        {
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  getModelPriceHistory: async (
+    base: string,
+    provider?: string,
+    model?: string,
+    limit?: number,
+    offset?: number,
+    managementKey?: string
+  ): Promise<ModelPriceSnapshotsResponse> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.get<ModelPriceSnapshotsResponse>(
+        buildUrl(base, '/v0/management/model-prices/history'),
+        {
+          params: { provider, model, limit, offset },
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
+          headers: authHeaders(managementKey),
+        }
+      );
+      return response.data;
+    });
+  },
+
+  getModelPriceAudit: async (
+    base: string,
+    provider?: string,
+    model?: string,
+    limit?: number,
+    offset?: number,
+    managementKey?: string
+  ): Promise<ModelPriceAuditEventsResponse> => {
+    return withUsageServiceError(async () => {
+      const response = await axios.get<ModelPriceAuditEventsResponse>(
+        buildUrl(base, '/v0/management/model-prices/audit'),
+        {
+          params: { provider, model, limit, offset },
+          timeout: USAGE_SERVICE_TIMEOUT_MS,
           headers: authHeaders(managementKey),
         }
       );

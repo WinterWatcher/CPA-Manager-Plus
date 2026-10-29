@@ -2,6 +2,8 @@ package modelprice
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +51,7 @@ type UpdateRequest struct {
 type SyncRequest struct {
 	Models               []string `json:"models"`
 	IncludeRuntimeModels bool     `json:"includeRuntimeModels,omitempty"`
+	AutoApprove          bool     `json:"autoApprove,omitempty"`
 }
 
 type SyncResult struct {
@@ -363,28 +366,106 @@ func (s *Service) Sync(ctx context.Context, req SyncRequest) (SyncResult, error)
 	}
 	selection := selectModelPriceCollection(remotePrices, effectiveModels)
 	preserved := []string(nil)
-	if hasFailedSyncSource(sourceResults) {
-		existingPrices, err := s.store.LoadModelPrices(ctx)
-		if err != nil {
-			return SyncResult{}, err
-		}
-		selection, preserved = preserveFailedSourcePrices(selection, existingPrices, sourceResults, effectiveModels)
-	}
-	result, err := s.store.UpsertSyncedModelPrices(ctx, selection.Prices)
+	existingPrices, err := s.store.LoadModelPrices(ctx)
 	if err != nil {
 		return SyncResult{}, err
 	}
-	for _, modelID := range result.Preserved {
-		delete(selection.Matched, modelID)
+	if hasFailedSyncSource(sourceResults) {
+		selection, preserved = preserveFailedSourcePrices(selection, existingPrices, sourceResults, effectiveModels)
 	}
-	if result.Imported > 0 {
+
+	// B1 & B2: Save detected candidate prices into model_price_candidates without directly overwriting active model_prices
+	nowMS := time.Now().UnixMilli()
+	var candidatesToSave []model.ModelPriceCandidate
+	importedCount := 0
+
+	for modelID, candidatePrice := range selection.Prices {
+		provider := candidatePrice.Provider
+		if provider == "" {
+			provider = "default"
+		}
+		candHash := computePriceHash(provider, modelID, candidatePrice)
+
+		var activePrice *store.ModelPrice
+		activeHash := ""
+		if act, ok := existingPrices[modelID]; ok {
+			activePrice = &act
+			actProv := act.Provider
+			if actProv == "" {
+				actProv = provider
+			}
+			activeHash = computePriceHash(actProv, modelID, act)
+		}
+
+		changeKind, status := detectPriceChange(activePrice, candidatePrice, activeHash != "" && activeHash == candHash)
+
+		// Protect manual prices
+		if activePrice != nil && strings.ToLower(strings.TrimSpace(activePrice.Source)) == "manual" {
+			delete(selection.Matched, modelID)
+			continue
+		}
+
+		candRecord := model.ModelPriceCandidate{
+			Provider:           provider,
+			Model:              modelID,
+			Capability:         candidatePrice.Capability,
+			BillingUnit:        candidatePrice.BillingUnit,
+			PromptPer1M:        candidatePrice.Prompt,
+			CompletionPer1M:    candidatePrice.Completion,
+			CachePer1M:         candidatePrice.Cache,
+			CacheReadPer1M:     candidatePrice.CacheRead,
+			CacheCreationPer1M: candidatePrice.CacheCreation,
+			UnitPrice:          candidatePrice.UnitPrice,
+			Source:             candidatePrice.Source,
+			SourceModelID:      candidatePrice.SourceModelID,
+			RawJSON:            candidatePrice.RawJSON,
+			ActivePriceHash:    activeHash,
+			CandidatePriceHash: candHash,
+			ChangeKind:         changeKind,
+			Status:             status,
+			DetectedAtMS:       nowMS,
+		}
+		candidatesToSave = append(candidatesToSave, candRecord)
+		importedCount++
+
+		if status == model.CandidateStatusBlocked {
+			_ = s.FreezeModel(ctx, provider, modelID, "system_sync", "critical price change detected: "+changeKind)
+		}
+	}
+
+	if err := s.store.SavePriceCandidates(ctx, candidatesToSave); err != nil {
+		return SyncResult{}, err
+	}
+
+	if req.AutoApprove {
+		candidates, _, _ := s.store.ListPriceCandidates(ctx, modelpricerepo.CandidateFilter{
+			Status: model.CandidateStatusPending,
+		})
+		for _, cand := range candidates {
+			if cand.ChangeKind != model.ChangeKindPriceIncrease && cand.ChangeKind != model.ChangeKindFreeToPaid && cand.ChangeKind != model.ChangeKindUnitChanged && cand.ChangeKind != model.ChangeKindModelRemapped {
+				_, _ = s.ApproveCandidate(ctx, cand.ID, "auto_approve", "safe change auto approved")
+			}
+		}
+	}
+
+	if importedCount > 0 {
 		s.notifyPricesChanged()
 	}
 	prices, err := s.store.LoadModelPrices(ctx)
 	if err != nil {
 		return SyncResult{}, err
 	}
-	selection = filterSelectionFeedback(selection, prices)
+	responsePrices := make(map[string]store.ModelPrice, len(prices)+len(selection.Prices))
+	for k, v := range prices {
+		responsePrices[k] = v
+	}
+	for k, v := range selection.Prices {
+		if act, ok := prices[k]; ok && strings.ToLower(strings.TrimSpace(act.Source)) == "manual" {
+			continue
+		}
+		responsePrices[k] = v
+	}
+	selection = filterSelectionFeedback(selection, responsePrices)
 	discoveryErrStr := ""
 	if runtimeDiscoveryErr != nil {
 		discoveryErrStr = runtimeDiscoveryErr.Error()
@@ -392,15 +473,15 @@ func (s *Service) Sync(ctx context.Context, req SyncRequest) (SyncResult, error)
 	return SyncResult{
 		Source:                     syncResultSource(sources),
 		Sources:                    sources,
-		Imported:                   result.Imported,
-		Skipped:                    result.Skipped + skipped,
+		Imported:                   importedCount,
+		Skipped:                    skipped,
 		Matched:                    selection.Matched,
 		Candidates:                 selection.Candidates,
 		Unmatched:                  selection.Unmatched,
 		Preserved:                  preserved,
 		ProxyUsed:                  proxyUsed,
 		SourceResults:              sourceResults,
-		Prices:                     prices,
+		Prices:                     responsePrices,
 		RuntimeModelCount:          runtimeModelCount,
 		RuntimeModelDiscoveryError: discoveryErrStr,
 	}, nil
@@ -453,6 +534,232 @@ func (s *Service) RuntimeModelPricingStatus(ctx context.Context) (RuntimeModelPr
 		Count:          len(normalizedModels),
 		UnpricedCount:  len(unpricedModels),
 	}, nil
+}
+
+func computePriceHash(provider, modelName string, p store.ModelPrice) string {
+	raw := fmt.Sprintf("%s|%s|%s|%s|%.6f|%.6f|%.6f|%.6f|%.6f|%.6f",
+		strings.ToLower(strings.TrimSpace(provider)),
+		strings.ToLower(strings.TrimSpace(modelName)),
+		strings.ToLower(strings.TrimSpace(p.Capability)),
+		strings.ToLower(strings.TrimSpace(p.BillingUnit)),
+		round6(p.Prompt),
+		round6(p.Completion),
+		round6(p.Cache),
+		round6(p.CacheRead),
+		round6(p.CacheCreation),
+		round6(p.UnitPrice),
+	)
+	h := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(h[:])
+}
+
+func round6(val float64) float64 {
+	return math.Round(val*1e6) / 1e6
+}
+
+func detectPriceChange(active *store.ModelPrice, cand store.ModelPrice, hashesMatch bool) (string, string) {
+	if active == nil {
+		return model.ChangeKindUnknownToKnown, model.CandidateStatusPending
+	}
+
+	if hashesMatch {
+		return model.ChangeKindUnchanged, model.CandidateStatusUnchanged
+	}
+
+	// 1. Billing unit change: CRITICAL -> BLOCKED
+	if strings.ToLower(strings.TrimSpace(active.BillingUnit)) != strings.ToLower(strings.TrimSpace(cand.BillingUnit)) &&
+		active.BillingUnit != "" && cand.BillingUnit != "" {
+		return model.ChangeKindUnitChanged, model.CandidateStatusBlocked
+	}
+
+	// 2. Free to Paid: 0 -> non-0: CRITICAL -> BLOCKED
+	wasFree := active.Prompt == 0 && active.Completion == 0 && active.UnitPrice == 0
+	isPaid := cand.Prompt > 0 || cand.Completion > 0 || cand.UnitPrice > 0
+	if wasFree && isPaid {
+		return model.ChangeKindFreeToPaid, model.CandidateStatusBlocked
+	}
+
+	// 3. Upstream model remapping: CRITICAL -> BLOCKED
+	if active.SourceModelID != "" && cand.SourceModelID != "" &&
+		strings.ToLower(strings.TrimSpace(active.SourceModelID)) != strings.ToLower(strings.TrimSpace(cand.SourceModelID)) {
+		return model.ChangeKindModelRemapped, model.CandidateStatusBlocked
+	}
+
+	// 4. Paid to Free: non-0 -> 0: PENDING
+	if !wasFree && !isPaid {
+		return model.ChangeKindPaidToFree, model.CandidateStatusPending
+	}
+
+	// 5. Price increase: PENDING with warning
+	if cand.Prompt > active.Prompt || cand.Completion > active.Completion || cand.UnitPrice > active.UnitPrice {
+		return model.ChangeKindPriceIncrease, model.CandidateStatusPending
+	}
+
+	// 6. Price decrease: PENDING
+	if cand.Prompt < active.Prompt || cand.Completion < active.Completion || cand.UnitPrice < active.UnitPrice {
+		return model.ChangeKindPriceDecrease, model.CandidateStatusPending
+	}
+
+	return model.ChangeKindUnchanged, model.CandidateStatusUnchanged
+}
+
+func (s *Service) ApproveCandidate(ctx context.Context, id int64, reviewer, reason string) (*model.ModelPriceCandidate, error) {
+	candidate, err := s.store.GetPriceCandidateByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if candidate == nil {
+		return nil, errors.New("candidate not found")
+	}
+	if candidate.Status == model.CandidateStatusApproved {
+		return candidate, nil
+	}
+
+	snapshot, err := s.store.ApplyApprovedPriceCandidate(ctx, *candidate, reviewer, reason)
+	if err != nil {
+		return nil, err
+	}
+	s.notifyPricesChanged()
+
+	candidate.Status = model.CandidateStatusApproved
+	nowMS := snapshot.CreatedAtMS
+	candidate.ReviewedAtMS = &nowMS
+	candidate.ReviewedBy = reviewer
+	candidate.ReviewReason = reason
+
+	return candidate, nil
+}
+
+func (s *Service) RejectCandidate(ctx context.Context, id int64, reviewer, reason string) (*model.ModelPriceCandidate, error) {
+	candidate, err := s.store.GetPriceCandidateByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if candidate == nil {
+		return nil, errors.New("candidate not found")
+	}
+	if candidate.Status == model.CandidateStatusRejected {
+		return candidate, nil
+	}
+
+	if err := s.store.UpdatePriceCandidateReview(ctx, id, model.CandidateStatusRejected, reviewer, reason); err != nil {
+		return nil, err
+	}
+
+	_ = s.store.RecordPriceAuditEvent(ctx, model.ModelPriceAuditEvent{
+		Action:      "reject",
+		Provider:    candidate.Provider,
+		Model:       candidate.Model,
+		CandidateID: &candidate.ID,
+		Operator:    reviewer,
+		Reason:      reason,
+		CreatedAtMS: time.Now().UnixMilli(),
+	})
+
+	candidate.Status = model.CandidateStatusRejected
+	nowMS := time.Now().UnixMilli()
+	candidate.ReviewedAtMS = &nowMS
+	candidate.ReviewedBy = reviewer
+	candidate.ReviewReason = reason
+
+	return candidate, nil
+}
+
+func (s *Service) FreezeModel(ctx context.Context, provider, modelName, operator, reason string) error {
+	nowMS := time.Now().UnixMilli()
+	err := s.store.SetPriceFreezeStatus(ctx, model.ModelPriceFreezeStatus{
+		Provider:     provider,
+		Model:        modelName,
+		IsFrozen:     true,
+		FrozenReason: reason,
+		FrozenAtMS:   &nowMS,
+		FrozenBy:     operator,
+	})
+	if err != nil {
+		return err
+	}
+	_ = s.store.RecordPriceAuditEvent(ctx, model.ModelPriceAuditEvent{
+		Action:      "freeze",
+		Provider:    provider,
+		Model:       modelName,
+		Operator:    operator,
+		Reason:      reason,
+		CreatedAtMS: nowMS,
+	})
+	s.notifyPricesChanged()
+	return nil
+}
+
+func (s *Service) UnfreezeModel(ctx context.Context, provider, modelName, operator, reason string) error {
+	if operator == "" {
+		return errors.New("operator required for unfreezing")
+	}
+	prices, err := s.store.LoadModelPrices(ctx)
+	if err != nil {
+		return err
+	}
+	if _, exists := prices[modelName]; !exists {
+		return fmt.Errorf("cannot unfreeze: model %s has no active price", modelName)
+	}
+
+	candidates, _, err := s.store.ListPriceCandidates(ctx, modelpricerepo.CandidateFilter{
+		Provider: provider,
+		Model:    modelName,
+		Status:   model.CandidateStatusBlocked,
+	})
+	if err != nil {
+		return err
+	}
+	if len(candidates) > 0 {
+		return fmt.Errorf("cannot unfreeze: model %s has %d unreviewed blocked candidates; review candidates first", modelName, len(candidates))
+	}
+
+	nowMS := time.Now().UnixMilli()
+	err = s.store.SetPriceFreezeStatus(ctx, model.ModelPriceFreezeStatus{
+		Provider:     provider,
+		Model:        modelName,
+		IsFrozen:     false,
+		FrozenReason: "",
+		FrozenAtMS:   nil,
+		FrozenBy:     "",
+	})
+	if err != nil {
+		return err
+	}
+	_ = s.store.RecordPriceAuditEvent(ctx, model.ModelPriceAuditEvent{
+		Action:      "unfreeze",
+		Provider:    provider,
+		Model:       modelName,
+		Operator:    operator,
+		Reason:      reason,
+		CreatedAtMS: nowMS,
+	})
+	s.notifyPricesChanged()
+	return nil
+}
+
+func (s *Service) ListCandidates(ctx context.Context, filter modelpricerepo.CandidateFilter) ([]model.ModelPriceCandidate, int64, error) {
+	return s.store.ListPriceCandidates(ctx, filter)
+}
+
+func (s *Service) GetCandidate(ctx context.Context, id int64) (*model.ModelPriceCandidate, error) {
+	return s.store.GetPriceCandidateByID(ctx, id)
+}
+
+func (s *Service) ListSnapshots(ctx context.Context, provider, modelName string, limit, offset int) ([]model.ModelPriceSnapshot, int64, error) {
+	return s.store.ListPriceSnapshots(ctx, provider, modelName, limit, offset)
+}
+
+func (s *Service) ListAuditEvents(ctx context.Context, provider, modelName string, limit, offset int) ([]model.ModelPriceAuditEvent, int64, error) {
+	return s.store.ListPriceAuditEvents(ctx, provider, modelName, limit, offset)
+}
+
+func (s *Service) GetFreezeStatus(ctx context.Context, provider, modelName string) (*model.ModelPriceFreezeStatus, error) {
+	return s.store.GetPriceFreezeStatus(ctx, provider, modelName)
+}
+
+func (s *Service) ListFrozenModels(ctx context.Context) ([]model.ModelPriceFreezeStatus, error) {
+	return s.store.ListPriceFrozenModels(ctx)
 }
 
 func (s *Service) DiscoverRuntimeModels(ctx context.Context) ([]string, error) {

@@ -1088,7 +1088,10 @@ func Migrate(db *sql.DB) error {
 	if err := ensureDashboardHourlyRollupFormatVersion(db); err != nil {
 		return err
 	}
-	return ensureModelPriceColumns(db)
+	if err := ensureModelPriceColumns(db); err != nil {
+		return err
+	}
+	return ensureModelPriceControlPlaneSchema(db)
 }
 
 // Create and backfill the deleted-raw summary atomically. Existing databases
@@ -3182,6 +3185,7 @@ func ensureModelPriceColumns(db *sql.DB) error {
 		{name: "capability", definition: "text"},
 		{name: "billing_unit", definition: "text"},
 		{name: "unit_price", definition: "real default 0"},
+		{name: "provider", definition: "text not null default ''"},
 	}
 	added := map[string]bool{}
 	for _, column := range columns {
@@ -3209,6 +3213,132 @@ func ensureModelPriceColumns(db *sql.DB) error {
 	}
 	if added["cache_creation_configured"] {
 		if _, err := tx.Exec(`update model_prices set cache_creation_configured = 1 where cache_creation_per_1m != 0`); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func ensureModelPriceControlPlaneSchema(db *sql.DB) error {
+	statements := []string{
+		`create table if not exists model_price_candidates (
+			id integer primary key autoincrement,
+			provider text not null default '',
+			model text not null,
+			capability text,
+			billing_unit text,
+			prompt_per_1m real not null default 0,
+			completion_per_1m real not null default 0,
+			cache_per_1m real not null default 0,
+			cache_read_per_1m real not null default 0,
+			cache_creation_per_1m real not null default 0,
+			unit_price real not null default 0,
+			source text not null,
+			source_model_id text,
+			raw_json text,
+			active_price_hash text,
+			candidate_price_hash text not null,
+			change_kind text not null,
+			status text not null,
+			detected_at_ms integer not null,
+			reviewed_at_ms integer,
+			reviewed_by text,
+			review_reason text
+		)`,
+		`create index if not exists idx_mpc_provider_model_status on model_price_candidates (provider, model, status)`,
+		`create index if not exists idx_mpc_detected_at on model_price_candidates (detected_at_ms desc)`,
+		`create table if not exists model_price_snapshots (
+			id integer primary key autoincrement,
+			provider text not null default '',
+			model text not null,
+			capability text,
+			billing_unit text,
+			prompt_per_1m real not null default 0,
+			completion_per_1m real not null default 0,
+			cache_per_1m real not null default 0,
+			cache_read_per_1m real not null default 0,
+			cache_creation_per_1m real not null default 0,
+			unit_price real not null default 0,
+			price_hash text not null,
+			source text not null,
+			created_at_ms integer not null,
+			created_by text
+		)`,
+		`create index if not exists idx_mps_provider_model on model_price_snapshots (provider, model)`,
+		`create index if not exists idx_mps_created_at on model_price_snapshots (created_at_ms desc)`,
+		`create table if not exists model_price_audit_events (
+			id integer primary key autoincrement,
+			action text not null,
+			provider text not null default '',
+			model text not null,
+			candidate_id integer,
+			snapshot_id integer,
+			operator text not null,
+			reason text,
+			details_json text,
+			created_at_ms integer not null
+		)`,
+		`create index if not exists idx_mpae_provider_model on model_price_audit_events (provider, model)`,
+		`create index if not exists idx_mpae_created_at on model_price_audit_events (created_at_ms desc)`,
+		`create table if not exists model_price_freeze_status (
+			provider text not null default '',
+			model text not null,
+			is_frozen integer not null default 0,
+			frozen_reason text,
+			frozen_at_ms integer,
+			frozen_by text,
+			primary key (provider, model)
+		)`,
+	}
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return ensureUsageEventPriceSnapshotColumns(db)
+}
+
+func ensureUsageEventPriceSnapshotColumns(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.Query(`pragma table_info(usage_events)`)
+	if err != nil {
+		return err
+	}
+	existing := map[string]struct{}{}
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		existing[name] = struct{}{}
+	}
+	_ = rows.Close()
+
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{name: "price_snapshot_id", definition: "integer"},
+		{name: "price_hash", definition: "text"},
+		{name: "price_billing_unit", definition: "text"},
+		{name: "price_unit_price", definition: "real"},
+		{name: "price_status", definition: "text"},
+	}
+	for _, col := range columns {
+		if _, exists := existing[col.name]; exists {
+			continue
+		}
+		if _, err := tx.Exec(fmt.Sprintf(`alter table usage_events add column %s %s`, col.name, col.definition)); err != nil {
 			return err
 		}
 	}

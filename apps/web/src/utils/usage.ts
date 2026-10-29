@@ -38,6 +38,7 @@ export interface ModelPriceServiceTier {
 }
 
 export interface ModelPrice {
+  provider?: string;
   prompt: number;
   completion: number;
   cache: number;
@@ -57,6 +58,71 @@ export interface ModelPrice {
   serviceTiers?: ModelPriceServiceTier[];
   updatedAtMs?: number;
   syncedAtMs?: number;
+}
+
+export interface ModelPriceCandidate {
+  id: number;
+  provider: string;
+  model: string;
+  capability?: string;
+  billingUnit?: string;
+  prompt: number;
+  completion: number;
+  cache: number;
+  cacheRead?: number;
+  cacheCreation?: number;
+  unitPrice?: number;
+  source: string;
+  sourceModelId?: string;
+  rawJson?: string;
+  activePriceHash?: string;
+  candidatePriceHash: string;
+  changeKind: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired' | 'blocked' | 'unchanged';
+  detectedAtMs: number;
+  reviewedAtMs?: number;
+  reviewedBy?: string;
+  reviewReason?: string;
+}
+
+export interface ModelPriceSnapshot {
+  id: number;
+  provider: string;
+  model: string;
+  capability?: string;
+  billingUnit?: string;
+  prompt: number;
+  completion: number;
+  cache: number;
+  cacheRead?: number;
+  cacheCreation?: number;
+  unitPrice?: number;
+  priceHash: string;
+  source: string;
+  createdAtMs: number;
+  createdBy?: string;
+}
+
+export interface ModelPriceAuditEvent {
+  id: number;
+  action: string;
+  provider: string;
+  model: string;
+  candidateId?: number;
+  snapshotId?: number;
+  operator: string;
+  reason?: string;
+  detailsJson?: string;
+  createdAtMs: number;
+}
+
+export interface ModelPriceFreezeStatus {
+  provider: string;
+  model: string;
+  isFrozen: boolean;
+  frozenReason?: string;
+  frozenAtMs?: number;
+  frozenBy?: string;
 }
 
 export interface UsageTokens {

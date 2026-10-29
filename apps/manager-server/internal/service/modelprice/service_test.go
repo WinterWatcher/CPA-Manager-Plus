@@ -1394,7 +1394,8 @@ func TestSyncDropsFeedbackForStoredPrices(t *testing.T) {
 	syncURL := source.URL
 
 	result, err := New(st, &syncURL).Sync(context.Background(), SyncRequest{
-		Models: []string{"fresh-model", "test-model-latest", "priced-unmatched"},
+		Models:      []string{"fresh-model", "test-model-latest", "priced-unmatched"},
+		AutoApprove: true,
 	})
 	if err != nil {
 		t.Fatalf("sync: %v", err)
