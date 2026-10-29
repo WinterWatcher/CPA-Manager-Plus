@@ -178,7 +178,11 @@ describe('Demo accounts quota & usage presentation regression', () => {
         const displayWindows = buildAccountQuotaDisplayWindows(row, options);
         const mainWindows = selectAccountQuotaMainListWindows(row, displayWindows);
         expect(mainWindows.length).toBeGreaterThan(0);
-        expect(mainWindows.length).toBeLessThanOrEqual(2);
+        if (row.provider === 'antigravity') {
+          expect(mainWindows.length).toBe(displayWindows.length);
+        } else {
+          expect(mainWindows.length).toBeLessThanOrEqual(2);
+        }
 
         mainWindows.forEach((w) => {
           expect(w.windowMode).not.toBe('unknown');

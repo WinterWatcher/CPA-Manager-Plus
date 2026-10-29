@@ -847,7 +847,8 @@ export const selectAccountQuotaMainListWindows = (
     return a.w.key.localeCompare(b.w.key);
   });
 
-  return indexed.slice(0, maxWindows).map((item) => item.w);
+  const limit = row.provider === 'antigravity' ? indexed.length : maxWindows;
+  return indexed.slice(0, limit).map((item) => item.w);
 };
 
 export const selectAccountQuotaListWindows = (
