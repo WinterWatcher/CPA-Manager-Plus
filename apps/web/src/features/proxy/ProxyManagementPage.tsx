@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -28,6 +28,9 @@ export function ProxyManagementPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checkingNodeId, setCheckingNodeId] = useState<string | null>(null);
+  const [batchChecking, setBatchChecking] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, healthy: 0, failed: 0 });
+  const abortBatchRef = useRef(false);
 
   const [status, setStatus] = useState<ProxyStatus | null>(null);
   const [nodes, setNodes] = useState<ProxyNode[]>([]);
@@ -299,6 +302,84 @@ export function ProxyManagementPage() {
     return Array.from(set).sort();
   }, [nodes]);
 
+  const handleBatchLatencyCheck = useCallback(async () => {
+    if (batchChecking || filteredNodes.length === 0) return;
+    abortBatchRef.current = false;
+    setBatchChecking(true);
+    setBatchProgress({ current: 0, total: filteredNodes.length, healthy: 0, failed: 0 });
+
+    const queue = [...filteredNodes];
+    const concurrency = 4;
+    let healthyCount = 0;
+    let failedCount = 0;
+    let completedCount = 0;
+
+    const worker = async () => {
+      while (queue.length > 0 && !abortBatchRef.current) {
+        const node = queue.shift();
+        if (!node) break;
+        try {
+          const res = await proxyControlApi.healthCheck({ dry_run: true, node_id: node.id });
+          if (res.healthy) {
+            healthyCount++;
+          } else {
+            failedCount++;
+          }
+          setNodes((current) =>
+            current.map((item) =>
+              item.id === node.id
+                ? {
+                    ...item,
+                    health: res.healthy ? 'healthy' : 'failed',
+                    latency_ms: res.healthy ? res.latency_ms : null,
+                    last_checked_at: res.checked_at,
+                    reason: res.error_code,
+                    consecutive_failures: res.healthy ? 0 : item.consecutive_failures + 1,
+                    consecutive_successes: res.healthy ? item.consecutive_successes + 1 : 0,
+                  }
+                : item
+            )
+          );
+        } catch {
+          failedCount++;
+        } finally {
+          completedCount++;
+          setBatchProgress({
+            current: completedCount,
+            total: filteredNodes.length,
+            healthy: healthyCount,
+            failed: failedCount,
+          });
+        }
+      }
+    };
+
+    try {
+      const workers = Array.from({ length: Math.min(concurrency, queue.length) }, () => worker());
+      await Promise.all(workers);
+      proxyControlApi.getHistory().then((h) => setHistory(h.items)).catch(() => {});
+      if (abortBatchRef.current) {
+        showNotification(
+          `已停止测速，已完成 ${completedCount}/${filteredNodes.length} 个节点 (通过: ${healthyCount}, 失败: ${failedCount})`,
+          'info'
+        );
+      } else {
+        showNotification(
+          `全量测速完成！共检测 ${completedCount} 个节点 (通过: ${healthyCount}, 失败: ${failedCount})`,
+          'success'
+        );
+      }
+    } catch (err: unknown) {
+      showNotification('批量测速异常: ' + (err instanceof Error ? err.message : String(err)), 'error');
+    } finally {
+      setBatchChecking(false);
+    }
+  }, [batchChecking, filteredNodes, showNotification]);
+
+  const handleStopBatchLatencyCheck = useCallback(() => {
+    abortBatchRef.current = true;
+  }, []);
+
   if (loading) {
     return (
       <div className={styles.container}>
@@ -509,6 +590,35 @@ export function ProxyManagementPage() {
           <h3 className={styles.cardTitle}>
             {t('proxy_management.candidate_nodes_title')} ({filteredNodes.length}/{nodesTotal})
           </h3>
+          <div className={styles.headerActions}>
+            {batchChecking ? (
+              <div className={styles.batchStatusGroup}>
+                <span className={styles.batchProgressText}>
+                  <LoadingSpinner size={13} />
+                  正在批量测速: {batchProgress.current} / {batchProgress.total}
+                  <span className={styles.batchProgressDetail}>
+                    (🟢 通过: {batchProgress.healthy} | 🔴 失败: {batchProgress.failed})
+                  </span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleStopBatchLatencyCheck}
+                >
+                  停止检测
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={isReadOnly || filteredNodes.length === 0 || checkingNodeId !== null}
+                onClick={handleBatchLatencyCheck}
+              >
+                ⚡ 一键检测全部节点延时
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Toolbar */}
@@ -610,7 +720,7 @@ export function ProxyManagementPage() {
                     <Button
                       size="sm"
                       variant="secondary"
-                      disabled={checkingNodeId !== null || isReadOnly || !n.switchable}
+                      disabled={batchChecking || checkingNodeId !== null || isReadOnly || !n.switchable}
                       onClick={() => handleNodeLatencyCheck(n)}
                     >
                       {checkingNodeId === n.id

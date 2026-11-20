@@ -797,20 +797,26 @@ export const selectAccountQuotaMainListWindows = (
           ? standardQuotaWindows
           : selectXaiQuotaListFallbackWindows(quotaWindows);
       break;
-    case 'antigravity':
+    case 'antigravity': {
+      const filteredStandard =
+        standardQuotaWindows.some((w) => !w.key.endsWith('-shared'))
+          ? standardQuotaWindows.filter((w) => !w.key.endsWith('-shared'))
+          : standardQuotaWindows;
       candidates =
-        standardQuotaWindows.length > 0
-          ? standardQuotaWindows
+        filteredStandard.length > 0
+          ? filteredStandard
           : quotaWindows.filter(
               (window) =>
                 window.windowMode !== 'non_window' &&
                 window.kind !== 'summary' &&
-                !isModelScopedAccountQuotaWindow(window)
+                !isModelScopedAccountQuotaWindow(window) &&
+                (!quotaWindows.some((w) => !w.key.endsWith('-shared')) || !window.key.endsWith('-shared'))
             );
       if (candidates.length === 0) {
         candidates = quotaWindows.filter((window) => window.windowMode !== 'non_window');
       }
       break;
+    }
     case 'meta':
       candidates = selectMetaQuotaListWindows(quotaWindows);
       break;

@@ -20,29 +20,53 @@ export function SecurityShieldPill() {
   }
 
   const risk = status.waf_risk_level;
-  let bgClass = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
-  let dotClass = 'bg-emerald-500';
   let label = '防线正常';
+  let color = '#10b981';
+  let bg = 'rgba(16, 185, 129, 0.12)';
+  let border = 'rgba(16, 185, 129, 0.3)';
 
   if (risk === 'warning') {
-    bgClass = 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 animate-pulse';
-    dotClass = 'bg-amber-500';
     label = `WAF 预警 (${status.canary_status})`;
+    color = '#d97706';
+    bg = 'rgba(245, 158, 11, 0.15)';
+    border = 'rgba(245, 158, 11, 0.4)';
   } else if (risk === 'critical') {
-    bgClass = 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/40 animate-pulse font-semibold';
-    dotClass = 'bg-rose-500';
     label = `风控告警 (${status.canary_status})`;
+    color = '#ef4444';
+    bg = 'rgba(239, 68, 68, 0.15)';
+    border = 'rgba(239, 68, 68, 0.4)';
   }
 
   return (
     <button
       type="button"
       onClick={() => navigate('/security-shield')}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full border transition-all cursor-pointer hover:opacity-85 shadow-sm ${bgClass}`}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '3px 10px',
+        fontSize: '12px',
+        fontWeight: 600,
+        borderRadius: '9999px',
+        border: `1px solid ${border}`,
+        backgroundColor: bg,
+        color: color,
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+      }}
       title={`Google 上游安全防线: ${status.canary_reason} | 延迟: ${status.canary_latency_sec}s | 点击查看态势感知大盘`}
     >
-      <span className={`w-2 h-2 rounded-full ${dotClass}`} />
-      <span className="font-mono">🛡️ {label}</span>
+      <span
+        style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          backgroundColor: color,
+          boxShadow: `0 0 6px ${color}`,
+        }}
+      />
+      <span style={{ fontFamily: 'var(--font-mono, monospace)' }}>🛡️ {label}</span>
     </button>
   );
 }

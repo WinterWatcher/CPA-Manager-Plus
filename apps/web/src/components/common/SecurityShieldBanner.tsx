@@ -12,24 +12,36 @@ export function SecurityShieldBanner() {
   }
 
   const isCritical = status.waf_risk_level === 'critical';
+  const bgColor = isCritical ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)';
+  const borderColor = isCritical ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)';
+  const textColor = isCritical ? '#b91c1c' : '#b45309';
+  const btnBg = isCritical ? '#ef4444' : '#f59e0b';
 
   return (
     <div
-      className={`w-full px-4 py-2.5 flex items-center justify-between border-b text-xs transition-colors shadow-sm ${
-        isCritical
-          ? 'bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-200'
-          : 'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-900/60 dark:text-amber-200'
-      }`}
+      style={{
+        width: '100%',
+        padding: '10px 18px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderBottom: `1px solid ${borderColor}`,
+        backgroundColor: bgColor,
+        color: textColor,
+        fontSize: '12px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+        transition: 'all 0.2s ease',
+      }}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-base">{isCritical ? '🚨' : '⚠️'}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ fontSize: '16px' }}>{isCritical ? '🚨' : '⚠️'}</span>
         <div>
-          <span className="font-semibold">
+          <span style={{ fontWeight: 700 }}>
             {isCritical
               ? '【严重安全警报】Google 上游账号封控/未授权预警'
               : '【上游 WAF 风险预警】金丝雀探针捕获提示词指纹拦截 (429 RESOURCE_EXHAUSTED)'}
           </span>
-          <span className="ml-2 opacity-90">
+          <span style={{ marginLeft: '8px', opacity: 0.9 }}>
             {isCritical
               ? `上游状态码: ${status.canary_status} (${status.canary_reason})。网关已激活单账号熔断防线，杜绝高频并发封号。`
               : `上游状态码: ${status.canary_status}。系统已自动阻断并保护当前账号，建议前往安全防线页面启动二分定位。`}
@@ -37,22 +49,35 @@ export function SecurityShieldBanner() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <button
           type="button"
           onClick={() => navigate('/security-shield')}
-          className={`px-2.5 py-1 rounded text-xs font-medium cursor-pointer transition-colors ${
-            isCritical
-              ? 'bg-rose-600 text-white hover:bg-rose-700'
-              : 'bg-amber-600 text-white hover:bg-amber-700'
-          }`}
+          style={{
+            padding: '4px 12px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            backgroundColor: btnBg,
+            color: '#fff',
+            border: 'none',
+          }}
         >
           查看防线大盘
         </button>
         <button
           type="button"
           onClick={dismissBanner}
-          className="p-1 rounded opacity-60 hover:opacity-100 transition-opacity cursor-pointer text-sm"
+          style={{
+            padding: '4px',
+            background: 'none',
+            border: 'none',
+            color: textColor,
+            cursor: 'pointer',
+            fontSize: '14px',
+            opacity: 0.7,
+          }}
           title="关闭本条提醒"
         >
           ✕

@@ -462,8 +462,12 @@ const getCardQuotaWindowGroups = (
 ): Array<{ key: string; windows: AccountQuotaDisplayWindow[] }> => {
   if (row.provider !== ANTIGRAVITY_CONFIG.type) return [{ key: 'all', windows }];
 
+  const effectiveWindows = windows.some((w) => !w.key.endsWith('-shared'))
+    ? windows.filter((w) => !w.key.endsWith('-shared'))
+    : windows;
+
   const grouped = new Map<string, AccountQuotaDisplayWindow[]>();
-  windows.forEach((window) => {
+  effectiveWindows.forEach((window) => {
     const key = window.groupLabel?.trim() || window.modelScope?.key || window.key;
     const group = grouped.get(key) ?? [];
     group.push(window);

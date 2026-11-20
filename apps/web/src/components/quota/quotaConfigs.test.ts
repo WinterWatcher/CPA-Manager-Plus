@@ -1753,6 +1753,64 @@ describe('DEVIN_CONFIG', () => {
     expect(nextState.quotaInventoryObserved).toBe(false);
   });
 
+  it('discards legacy synthetic fallback groups when incoming has official Antigravity groups', () => {
+    const file = { name: 'antigravity.json', type: 'antigravity' };
+    const currentState = ANTIGRAVITY_CONFIG.buildSuccessState(
+      {
+        groups: [
+          {
+            id: 'claude-gpt',
+            label: 'Claude',
+            buckets: [
+              { id: 'claude-gpt-shared', label: 'Claude', remainingFraction: 1.0 },
+            ],
+          },
+          {
+            id: 'gemini',
+            label: 'Gemini',
+            buckets: [
+              { id: 'gemini-shared', label: 'Gemini', remainingFraction: 1.0 },
+            ],
+          },
+        ],
+        quotaInventoryObserved: true,
+        subscription: null,
+        serverTimeOffsetMs: null,
+      },
+      file
+    );
+
+    const incomingData = {
+      groups: [
+        {
+          id: 'claude-and-gpt-models',
+          label: 'Claude and GPT Models',
+          buckets: [
+            { id: '3p-5h', label: '5-Hour Limit', window: '5h', remainingFraction: 1.0 },
+            { id: '3p-weekly', label: 'Weekly Limit', window: 'weekly', remainingFraction: 1.0 },
+          ],
+        },
+        {
+          id: 'gemini-models',
+          label: 'Gemini Models',
+          buckets: [
+            { id: 'gemini-5h', label: '5-Hour Limit', window: '5h', remainingFraction: 1.0 },
+            { id: 'gemini-weekly', label: 'Weekly Limit', window: 'weekly', remainingFraction: 0.99 },
+          ],
+        },
+      ],
+      quotaInventoryObserved: true,
+      subscription: null,
+      serverTimeOffsetMs: null,
+    };
+
+    const nextState = ANTIGRAVITY_CONFIG.buildSuccessState(incomingData, file, currentState);
+
+    expect(nextState.groups).toHaveLength(2);
+    expect(nextState.groups.map((g) => g.id)).toEqual(['claude-and-gpt-models', 'gemini-models']);
+    expect(nextState.groups.some((g) => g.id === 'claude-gpt' || g.id === 'gemini')).toBe(false);
+  });
+
   it('preserves existing Claude windows when refresh is partial', () => {
     const file = { name: 'claude.json', type: 'claude' };
     const currentState = CLAUDE_CONFIG.buildSuccessState(

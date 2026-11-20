@@ -640,6 +640,10 @@ export function mergeClaudeQuotaWindows(
   };
 }
 
+export const isSyntheticAntigravityQuotaGroup = (group: AntigravityQuotaGroup): boolean =>
+  (group.id === 'claude-gpt' || group.id === 'gemini') &&
+  group.buckets.some((b) => b.id.endsWith('-shared'));
+
 export function mergeAntigravityQuotaGroups(
   previousGroups: AntigravityQuotaGroup[] | undefined,
   incomingGroups: AntigravityQuotaGroup[]
@@ -647,6 +651,18 @@ export function mergeAntigravityQuotaGroups(
   if (!previousGroups || previousGroups.length === 0) {
     return { groups: incomingGroups, retainedCount: 0 };
   }
+
+  const hasOfficialIncoming = incomingGroups.some((g) => !isSyntheticAntigravityQuotaGroup(g));
+  const hasOfficialPrevious = previousGroups.some((g) => !isSyntheticAntigravityQuotaGroup(g));
+
+  // If previous had official groups and incoming only has fallback synthetic groups, preserve official
+  if (hasOfficialPrevious && incomingGroups.every(isSyntheticAntigravityQuotaGroup)) {
+    return {
+      groups: previousGroups,
+      retainedCount: previousGroups.reduce((acc, g) => acc + g.buckets.length, 0),
+    };
+  }
+
   const incomingById = new Map(incomingGroups.map((g) => [g.id, g]));
   let retainedCount = 0;
   const merged: AntigravityQuotaGroup[] = [];
@@ -669,6 +685,10 @@ export function mergeAntigravityQuotaGroups(
 
   for (const prev of previousGroups) {
     if (!incomingById.has(prev.id)) {
+      // Discard synthetic fallback groups when incoming has official groups
+      if (hasOfficialIncoming && isSyntheticAntigravityQuotaGroup(prev)) {
+        continue;
+      }
       merged.push(prev);
       retainedCount += prev.buckets.length;
     }

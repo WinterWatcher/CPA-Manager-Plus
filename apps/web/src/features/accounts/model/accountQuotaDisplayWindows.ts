@@ -552,12 +552,19 @@ const buildClaudeQuotaDisplayWindows = (
   return windows;
 };
 
+const isSyntheticAntigravityGroup = (g: { id: string; buckets: Array<{ id: string }> }) =>
+  (g.id === 'claude-gpt' || g.id === 'gemini') && g.buckets.some((b) => b.id.endsWith('-shared'));
+
 const buildAntigravityQuotaDisplayWindows = (
   row: AccountRow,
   options: BuildAccountQuotaDisplayWindowsOptions
 ): AccountQuotaDisplayWindow[] => {
   const quota = getCredentialScopedQuotaState(options.stores.antigravityQuota, row.raw);
-  const groups = quota?.groups ?? [];
+  const rawGroups = quota?.groups ?? [];
+  const hasOfficialGroups = rawGroups.some((g) => !isSyntheticAntigravityGroup(g));
+  const groups = hasOfficialGroups
+    ? rawGroups.filter((g) => !isSyntheticAntigravityGroup(g))
+    : rawGroups;
   return groups.flatMap((group) => {
     const groupLabel = translateAntigravityQuotaLabel(
       group.label,

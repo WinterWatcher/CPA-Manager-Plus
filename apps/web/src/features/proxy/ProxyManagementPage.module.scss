@@ -59,6 +59,27 @@
   gap: 8px;
 }
 
+.batchStatusGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.batchProgressText {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batchProgressDetail {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--text-secondary);
+}
+
 .noticeBanner {
   display: flex;
   align-items: center;
