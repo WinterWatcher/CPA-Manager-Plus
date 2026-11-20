@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/Button';
 import { PageTransition } from '@/components/common/PageTransition';
 import { DatabaseMaintenanceBanner } from '@/components/common/DatabaseMaintenanceBanner';
 import { DatabaseMaintenanceProvider } from '@/components/common/DatabaseMaintenanceContext';
+import { SecurityShieldBanner } from '@/components/common/SecurityShieldBanner';
+import { SecurityShieldPill } from '@/components/common/SecurityShieldPill';
 import { MainRoutes } from '@/router/MainRoutes';
 import {
   IconGithub,
@@ -554,6 +556,12 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
       shortLabel: navShortLabel('nav.logs', t('nav.logs')),
       icon: sidebarIcons.logs,
     },
+    {
+      path: '/security-shield',
+      label: '安全防线与态势大盘',
+      shortLabel: '安全防线',
+      icon: <span style={{ fontSize: '18px', display: 'flex', alignItems: 'center' }}>🛡️</span>,
+    },
   ];
   const pluginControlNavItems: NavItem[] = pluginControlMenuVisible
     ? [
@@ -784,6 +792,8 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
               {headerIcons.refresh}
             </Button>
 
+            <SecurityShieldPill />
+
             <a
               className="btn btn-ghost btn-sm"
               href={GITHUB_REPOSITORY_URL}
@@ -1012,6 +1022,7 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
               .join(' ')}
           >
             <DatabaseMaintenanceBanner />
+            <SecurityShieldBanner />
             <PageTransition
               key={routeBase || 'main'}
               render={(location) => <MainRoutes location={location} routeBase={routeBase} />}

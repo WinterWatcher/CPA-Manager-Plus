@@ -27,6 +27,7 @@ import { ModelPricesPage } from '@/pages/ModelPricesPage';
 import { ProxyManagementPage } from '@/pages/ProxyManagementPage';
 import { ConfigPage } from '@/pages/ConfigPage';
 import { LogsPage } from '@/pages/LogsPage';
+import { SecurityShieldPage } from '@/pages/SecurityShieldPage';
 import { PluginResourcePage } from '@/pages/PluginResourcePage';
 import { PluginsPage } from '@/pages/PluginsPage';
 import { SystemPage } from '@/pages/SystemPage';
@@ -261,6 +262,7 @@ const mainRoutes: RouteObject[] = [
   { path: '/plugin-store/*', element: <Navigate to="/plugins?tab=store" replace /> },
   { path: '/plugin-pages/*', element: <Navigate to="/" replace /> },
   { path: '/config', element: <ConfigPage /> },
+  { path: '/security-shield', element: <SecurityShieldPage /> },
   {
     path: '/logs',
     element: (

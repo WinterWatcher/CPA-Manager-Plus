@@ -22,3 +22,4 @@ export {
   publishAccountCredentialMutationRevision,
   useAccountCredentialMutationRevisionStore,
 } from './useAccountCredentialMutationRevisionStore';
+export { useSecurityShieldStore } from './useSecurityShieldStore';

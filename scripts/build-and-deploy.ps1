@@ -31,20 +31,32 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "===> Local Build Success: $Tag" -ForegroundColor Green
 
 if ($Deploy) {
-    Write-Host "===> 2. Streaming image to $ServerHost (docker save | ssh docker load)..." -ForegroundColor Cyan
-    # Stream compressed image directly to remote Docker daemon without saving local temp files
-    docker save $Tag | gzip | ssh -i $ServerKey "root@${ServerHost}" "gunzip | docker load"
-    
-    Write-Host "===> 3. Updating remote container..." -ForegroundColor Cyan
-    ssh -i $ServerKey "root@${ServerHost}" @"
-docker stop cpa-manager-plus || true
-docker rm cpa-manager-plus || true
-docker tag $Tag cpa-manager-plus:current
-docker run -d --name cpa-manager-plus --restart always --network host \
-  -v /data/cpa-manager-plus:/data \
-  cpa-manager-plus:current
+    Write-Host "===> 2. Saving and deploying image to $ServerHost..." -ForegroundColor Cyan
+    $LocalTar = Join-Path ([System.IO.Path]::GetTempPath()) "cpamp-$Commit.tar"
+    $RemoteTar = "/tmp/cpamp-$Commit.tar"
+
+    try {
+        Write-Host "Saving local image $Tag to temp tar..." -ForegroundColor Cyan
+        docker save $Tag -o $LocalTar
+
+        Write-Host "Transferring to $ServerHost via scp..." -ForegroundColor Cyan
+        scp -i $ServerKey $LocalTar "root@${ServerHost}:${RemoteTar}"
+
+        Write-Host "Loading image and updating container via compose..." -ForegroundColor Cyan
+        $DeployImage = "cpa-manager-plus:controlplane-v1.14.10-$Commit"
+        ssh -i $ServerKey "root@${ServerHost}" @"
+docker load -i $RemoteTar
+rm -f $RemoteTar
+docker tag $Tag $DeployImage
+sed -i -E 's|image: cpa-manager-plus:.*|image: $DeployImage|' /opt/cpa-manager-plus/compose.yaml
+cd /opt/cpa-manager-plus && docker compose up -d
 docker image prune -f
 "@
+    } finally {
+        if (Test-Path $LocalTar) {
+            Remove-Item $LocalTar -Force -ErrorAction SilentlyContinue
+        }
+    }
     Write-Host "===> CPA-Manager-Plus Deployment Completed Successfully!" -ForegroundColor Green
 } else {
     Write-Host "Build complete. Pass -Deploy switch to automatically stream image to server and run." -ForegroundColor Yellow
