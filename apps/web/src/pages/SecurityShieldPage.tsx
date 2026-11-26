@@ -272,7 +272,7 @@ export function SecurityShieldPage() {
                   {status?.canary_latency_sec ? `${status.canary_latency_sec}s` : '4.74s'}
                 </div>
                 <div className={styles.cardSubtext}>
-                  巡检周期: 10 分钟自动探活 | 状态: 正常
+                  巡检模式: 被动真实流量监测（已禁用自动探活） | 状态: 正常
                 </div>
               </div>
               <div>
@@ -361,7 +361,7 @@ export function SecurityShieldPage() {
                     <span className={styles.stepTag}>Header Spoofing</span>
                   </div>
                   <p className={styles.stepDesc}>
-                    拦截并剔除 x-cursor-*, x-zed-*, x-stainless-*, anthropic-*, user-agent 等所有第三方追踪头；强行伪装为官方原生 UA (antigravity/hub/2.13.0) 与 X-Goog-Api-Client。
+                    拦截并剔除 x-cursor-*, x-zed-*, x-stainless-*, anthropic-*, user-agent 等所有第三方追踪头；严格白名单放行官方原生 UA (antigravity/hub/2.35.2+) 与 X-Goog-Api-Client，异常头一律重写兜底。
                   </p>
                 </div>
                 <span className={styles.stepStatusChip}>
